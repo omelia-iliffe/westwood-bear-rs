@@ -1,8 +1,8 @@
 use crate::checksum;
 use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
 use crate::protocol::{Response, PACKET_ERROR, PACKET_ID, PACKET_LEN};
+use core::time::Duration;
 use log::{debug, trace};
-use std::time::Duration;
 
 /// Default buffer type.
 ///

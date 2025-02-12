@@ -7,6 +7,7 @@ pub use response::Response;
 pub(crate) const PACKET_ID: usize = 2;
 pub(crate) const PACKET_LEN: usize = 3;
 pub(crate) const PACKET_ERROR: usize = 4;
+#[derive(Debug)]
 #[repr(u8)]
 pub enum Instruction {
     Ping = 0x01,
@@ -19,6 +20,8 @@ pub enum Instruction {
 }
 
 /// Registers used to set motor configuration
+#[derive(Debug)]
+#[repr(u8)]
 pub enum ConfigRegister {
     ID = 0x00,
     Mode = 0x01,
@@ -59,6 +62,8 @@ pub enum ConfigRegister {
 }
 
 /// Status Registers
+#[derive(Debug)]
+#[repr(u8)]
 pub enum StatusRegister {
     TorqueEnable = 0x00, // Enable output
     HomingComplete = 0x01,

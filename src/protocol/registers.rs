@@ -1,6 +1,7 @@
 #![allow(non_camel_case_types)]
 use crate::error::{BufferTooSmallError, InvalidMessage};
 
+#[derive(Debug)]
 pub enum RegisterType {
     Config,
     Status,

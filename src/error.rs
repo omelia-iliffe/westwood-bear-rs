@@ -1,5 +1,5 @@
+use core::fmt::{Display, Formatter, Result as FmtResult};
 use derive_more::{Display, Error, From};
-use std::fmt::{Display, Formatter, Result as FmtResult};
 
 /// An error that can occur during a read/write transfer.
 #[derive(Debug, Display, Error, From)]
