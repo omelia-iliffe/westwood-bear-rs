@@ -1,4 +1,3 @@
-use crate::protocol::packet_id::BROADCAST;
 use derive_more::{Display, Error, From};
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -6,9 +5,11 @@ use std::fmt::{Display, Formatter, Result as FmtResult};
 #[derive(Debug, Display, Error, From)]
 pub enum TransferError<E> {
     /// The write of failed.
+    #[from]
     WriteError(WriteError<E>),
 
     /// The read failed.
+    #[from(ReadError<E>, InvalidMessage, InvalidPacketId)]
     ReadError(ReadError<E>),
 }
 
@@ -45,6 +46,7 @@ pub struct BufferTooSmallError {
 #[derive(Debug, Display, Error, From)]
 pub enum ReadError<E> {
     /// The read buffer is too small to contain the whole stuffed message.
+    #[from]
     BufferFull(BufferTooSmallError),
 
     /// Failed to read from the serial port.
@@ -52,6 +54,7 @@ pub enum ReadError<E> {
     Io(E),
 
     /// The received message is invalid.
+    #[from(InvalidMessage, InvalidChecksum, InvalidPacketId)]
     InvalidMessage(InvalidMessage),
 
     /// The motor reported an error instead of a valid response.
@@ -60,23 +63,18 @@ pub enum ReadError<E> {
     /// since the instruction has still been exectuted.
     ///
     /// Instead, the `alert` bit in the response will be set.
+    #[from]
     MotorError,
 }
 
 /// The received message is not valid.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error, From)]
 pub enum InvalidMessage {
-    /// The header does not start with the proper prefix.
-    InvalidHeaderPrefix(InvalidHeaderPrefix),
-
     /// The message checksum is invalid.
     InvalidChecksum(InvalidChecksum),
 
     /// The message has an invalid packet ID.
     InvalidPacketId(InvalidPacketId),
-
-    /// The message has an invalid instruction.
-    InvalidInstruction(InvalidInstruction),
 
     /// The message has an invalid parameter count.
     InvalidParameterCount(InvalidParameterCount),
@@ -117,26 +115,15 @@ pub enum InvalidMessage {
 //     }
 // }
 
-/// The received message has an invalid header prefix.
-#[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
-#[display("invalid header prefix, expected {:02X?}, got {:02X?}", self.expected, self.actual)]
-pub struct InvalidHeaderPrefix {
-    /// The actual prefix.
-    pub actual: [u8; 4],
-
-    /// The expected prefix.
-    pub expected: [u8; 4],
-}
-
 /// The received message has an invalid checksum value.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
 #[display("invalid checksum, message claims {:#02X}, computed {:#02X}", self.message, self.computed)]
 pub struct InvalidChecksum {
     /// The checksum from the messsage.
-    pub message: u16,
+    pub message: u8,
 
     /// The actual checksum.
-    pub computed: u16,
+    pub computed: u8,
 }
 
 /// The received message has an invalid or unexpected packet ID.
@@ -160,17 +147,6 @@ impl Display for InvalidPacketId {
             write!(f, "invalid packet ID: {:#02X}", self.actual)
         }
     }
-}
-
-/// The received message has an invalid or unexpected instruction value.
-#[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
-#[display("invalid instruction ID, expected {}, got {}", self.expected, self.actual)]
-pub struct InvalidInstruction {
-    /// The actual instruction ID.
-    pub actual: u8,
-
-    /// The expected instruction id.
-    pub expected: u8,
 }
 
 /// The expected number of parameters.
@@ -238,20 +214,6 @@ impl BufferTooSmallError {
 //     }
 // }
 
-impl InvalidHeaderPrefix {
-    /// Check if the header prefix matches the expected value.
-    pub fn check(actual: &[u8], expected: [u8; 4]) -> Result<(), Self> {
-        if actual == expected {
-            Ok(())
-        } else {
-            Err(Self {
-                actual: [actual[0], actual[1], actual[2], actual[3]],
-                expected,
-            })
-        }
-    }
-}
-
 impl InvalidPacketId {
     /// Check if the packet ID matches the expected value.
     pub fn check(actual: u8, expected: u8) -> Result<(), Self> {
@@ -262,26 +224,6 @@ impl InvalidPacketId {
                 actual,
                 expected: Some(expected),
             })
-        }
-    }
-
-    /// Check if the packet ID matches the expected value, but don't report an error if the ID is the broadcast ID.
-    pub fn check_ignore_broadcast(actual: u8, expected: u8) -> Result<(), Self> {
-        if expected == BROADCAST {
-            Ok(())
-        } else {
-            Self::check(actual, expected)
-        }
-    }
-}
-
-impl InvalidInstruction {
-    /// Check if the instruction ID is the expected value.
-    pub fn check(actual: u8, expected: u8) -> Result<(), Self> {
-        if actual == expected {
-            Ok(())
-        } else {
-            Err(Self { actual, expected })
         }
     }
 }
