@@ -1,6 +1,6 @@
+use crate::checksum;
 use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
-use crate::protocol::Response;
-use crate::{checksum, SerialPort};
+use crate::protocol::{Response, PACKET_ERROR, PACKET_ID, PACKET_LEN};
 use log::{debug, trace};
 use std::time::Duration;
 
@@ -24,25 +24,95 @@ const HEADER_SIZE: usize = 4;
 // | HEADER    | ID | LEN | INST | ADDR | PARAM        | CRC |
 // | 255, 255  | 2  | 7   | 3    | 5    | 0, 0, 48, 65 | 125 |
 
-pub struct Bus<SerialPort = serial2::SerialPort, Buffer = DefaultBuffer>
-where
-    SerialPort: crate::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
-{
-    /// The underlying stream (normally a serial port).
-    pub(crate) serial_port: SerialPort,
-    /// The baud rate of the serial port, if known.
-    pub(crate) baud_rate: u32,
-    /// The buffer for reading incoming messages.
-    pub(crate) read_buffer: Buffer,
-    /// The total number of valid bytes in the read buffer.
-    pub(crate) read_len: usize,
-    /// The number of leading bytes in the read buffer that have already been used.
-    pub(crate) used_bytes: usize,
-    /// The buffer for outgoing messages.
-    pub(crate) write_buffer: Buffer,
+macro_rules! make_client_struct {
+    ($($DefaultSerialPort:ty)?) => {
+        pub struct Bus<SerialPort $(= $DefaultSerialPort)?, Buffer = DefaultBuffer>
+        where
+            SerialPort: crate::SerialPort,
+            Buffer: AsRef<[u8]> + AsMut<[u8]>,
+        {
+            /// The underlying stream (normally a serial port).
+            pub(crate) serial_port: SerialPort,
+            /// The baud rate of the serial port, if known.
+            pub(crate) baud_rate: u32,
+            /// The buffer for reading incoming messages.
+            pub(crate) read_buffer: Buffer,
+            /// The total number of valid bytes in the read buffer.
+            pub(crate) read_len: usize,
+            /// The number of leading bytes in the read buffer that have already been used.
+            pub(crate) used_bytes: usize,
+            /// The buffer for outgoing messages.
+            pub(crate) write_buffer: Buffer,
+        }
+    };
 }
 
+#[cfg(feature = "serial2")]
+make_client_struct!(serial2::SerialPort);
+
+#[cfg(not(feature = "serial2"))]
+make_client_struct!();
+
+impl<SerialPort, Buffer> core::fmt::Debug for Bus<SerialPort, Buffer>
+where
+    SerialPort: crate::SerialPort + core::fmt::Debug,
+    Buffer: AsRef<[u8]> + AsMut<[u8]>,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Bus")
+            .field("serial_port", &self.serial_port)
+            .field("baud_rate", &self.baud_rate)
+            .finish_non_exhaustive()
+    }
+}
+#[cfg(feature = "serial2")]
+impl Bus<serial2::SerialPort, Vec<u8>> {
+    /// Open a serial port with the given baud rate.
+    ///
+    /// This will allocate a new read and write buffer of 128 bytes each.
+    /// Use [`Self::open_with_buffers()`] if you want to use a custom buffers.
+    pub fn open(path: impl AsRef<std::path::Path>, baud_rate: u32) -> std::io::Result<Self> {
+        let serial_port = serial2::SerialPort::open(path, baud_rate)?;
+        let bus = Bus::with_buffers_and_baud_rate(serial_port, vec![0; 128], vec![0; 128], baud_rate);
+        Ok(bus)
+    }
+}
+#[cfg(feature = "serial2")]
+impl<Buffer> Bus<serial2::SerialPort, Buffer>
+where
+    Buffer: AsRef<[u8]> + AsMut<[u8]>,
+{
+    /// Open a serial port with the given baud rate.
+    ///
+    /// This will allocate a new read and write buffer of 128 bytes each.
+    pub fn open_with_buffers(
+        path: impl AsRef<std::path::Path>,
+        baud_rate: u32,
+        read_buffer: Buffer,
+        write_buffer: Buffer,
+    ) -> std::io::Result<Self> {
+        let serial_port = serial2::SerialPort::open(path, baud_rate)?;
+        let bus = Bus::with_buffers_and_baud_rate(serial_port, read_buffer, write_buffer, baud_rate);
+        Ok(bus)
+    }
+}
+#[cfg(feature = "alloc")]
+impl<SerialPort> Bus<SerialPort, Vec<u8>>
+where
+    SerialPort: crate::SerialPort,
+{
+    /// Create a new client using an open serial port.
+    ///
+    /// The serial port must already be configured in raw mode with the correct baud rate,
+    /// character size (8), parity (disabled) and stop bits (1).
+    ///
+    /// This will allocate a new read and write buffer of 128 bytes each.
+    /// Use [`Self::with_buffers()`] if you want to use a custom buffers.
+    #[cfg(feature = "alloc")]
+    pub fn new(serial_port: SerialPort) -> Result<Self, SerialPort::Error> {
+        Bus::with_buffers(serial_port, vec![0; 128], vec![0; 128])
+    }
+}
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
     SerialPort: crate::SerialPort,
@@ -88,6 +158,13 @@ where
             used_bytes: 0,
             write_buffer,
         }
+    }
+
+    /// Set the baud rate of the underlying serial port.
+    pub fn set_baud_rate(&mut self, baud_rate: u32) -> Result<(), SerialPort::Error> {
+        self.serial_port.set_baud_rate(baud_rate)?;
+        self.baud_rate = baud_rate;
+        Ok(())
     }
 
     /// Write a raw instruction to a stream, and read a single raw response.
@@ -175,7 +252,7 @@ where
         &mut self,
         expected_parameters: u8,
     ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
-        let timeout = Duration::from_millis(50); //todo add calculated timeout
+        let timeout = message_transfer_time(expected_parameters as u32, self.baud_rate) + Duration::from_millis(1);
         self.read_response_timeout(timeout)
     }
 
@@ -183,8 +260,8 @@ where
         let deadline = self.serial_port.make_deadline(timeout);
         let packet = self.read_packet_deadline(deadline)?;
         let response = Response {
-            motor_id: packet[2],
-            error: packet[4],
+            motor_id: packet[PACKET_ID],
+            error: packet[PACKET_ERROR],
             data: &packet[5..],
         };
         Ok(response)
@@ -192,10 +269,6 @@ where
 
     /// returns a packet including header + parameters
     fn read_packet_deadline(&mut self, deadline: SerialPort::Instant) -> Result<&[u8], ReadError<SerialPort::Error>> {
-        const PACKET_ID: usize = 2;
-        const PACKET_LEN: usize = 3;
-        const PACKET_ERROR: usize = 4;
-
         // Check that the read buffer is large enough to hold atleast a instruction packet with 0 parameters.
         crate::error::BufferTooSmallError::check(HEADER_SIZE + 2, self.read_buffer.as_mut().len())?; //todo check size is correct
 
@@ -246,22 +319,7 @@ where
 
         // Mark the whole message as "used_bytes", so that the next call to `remove_garbage()` removes it.
         self.used_bytes += message_len;
-
-        // Wrap the data in a `Packet`.
         let packet = &self.read_buffer.as_ref()[..parameters_end];
-        // let packet = packet::Packet { data };
-
-        // // Ensure that status packets have an error field (included in parameter_count here).
-        // if packet.instruction_id() == crate::instructions::instruction_id::STATUS && parameter_count < 1 {
-        //     return Err(
-        //         crate::InvalidMessage::InvalidParameterCount(crate::InvalidParameterCount {
-        //             actual: 0,
-        //             expected: crate::ExpectedCount::Min(1),
-        //         })
-        //         .into(),
-        //     );
-        // }
-
         Ok(packet)
     }
     /// Remove leading garbage data from the read buffer.

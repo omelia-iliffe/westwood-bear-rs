@@ -4,6 +4,9 @@ mod response;
 
 pub use response::Response;
 
+pub(crate) const PACKET_ID: usize = 2;
+pub(crate) const PACKET_LEN: usize = 3;
+pub(crate) const PACKET_ERROR: usize = 4;
 #[repr(u8)]
 pub enum Instruction {
     Ping = 0x01,

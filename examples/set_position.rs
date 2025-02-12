@@ -6,8 +6,7 @@ const ID: u8 = 1;
 use ww_bear::registers;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    let port = serial2::SerialPort::open("/dev/ttyUSB0", 8000000)?;
-    let mut bear = Bus::with_buffers(port, vec![0; 100], vec![0; 100])?;
+    let mut bear = Bus::open("/dev/ttyUSB0", 8_000_000)?;
 
     match bear.ping(ID) {
         Ok(_) => {
@@ -39,13 +38,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     bear.write::<registers::GoalPos>(ID, start_pos)?;
 
-    loop {
+    for _ in 1..10 {
         bear.write::<registers::GoalPos>(ID, start_pos - 0.5)?;
         thread::sleep(Duration::from_millis(1500));
 
         bear.write::<registers::GoalPos>(ID, start_pos + 0.5)?;
         thread::sleep(Duration::from_millis(1500));
     }
-
     Ok(())
 }

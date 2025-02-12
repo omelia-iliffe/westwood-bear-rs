@@ -20,7 +20,6 @@ mod tests {
     use crate::bus::Bus;
     use crate::protocol::{Instruction, StatusRegister};
     use serial2::SerialPort;
-    use std::io::Write;
     use test_log::test;
 
     fn setup_bus() -> Bus {
@@ -35,7 +34,7 @@ mod tests {
         let r = Bus::<SerialPort>::make_packet(&mut buffer, 1, Instruction::WriteStat as u8, 5, |buffer| {
             buffer[0] = 5;
 
-            (&mut buffer[1..]).write(&pos.to_le_bytes()).unwrap();
+            buffer[1..].copy_from_slice(&pos.to_le_bytes());
             Ok(())
         })
         .unwrap();
