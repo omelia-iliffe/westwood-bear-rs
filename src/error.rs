@@ -1,3 +1,5 @@
+use crate::protocol::ERROR_FLAGS;
+use crate::ErrorFlags;
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use derive_more::{Display, Error, From};
 
@@ -9,7 +11,7 @@ pub enum TransferError<E> {
     WriteError(WriteError<E>),
 
     /// The read failed.
-    #[from(ReadError<E>, InvalidMessage, InvalidPacketId)]
+    #[from(ReadError<E>, InvalidMessage, InvalidPacketId, MotorError)]
     ReadError(ReadError<E>),
 }
 
@@ -64,7 +66,7 @@ pub enum ReadError<E> {
     ///
     /// Instead, the `alert` bit in the response will be set.
     #[from]
-    MotorError,
+    MotorError(MotorError),
 }
 
 /// The received message is not valid.
@@ -80,40 +82,12 @@ pub enum InvalidMessage {
     InvalidParameterCount(InvalidParameterCount),
 }
 
-// /// An error reported by the motor.
-// #[derive(Clone, Eq, PartialEq)]
-// pub struct MotorError {
-//     /// The raw error as returned by the motor.
-//     pub raw: u8,
-// }
-//
-// impl MotorError {
-//     /// The error number reported by the motor.
-//     ///
-//     /// This is the lower 7 bits of the raw error field.
-//     pub fn error_number(&self) -> u8 {
-//         self.raw & !0x80
-//     }
-//
-//     /// The alert bit from the error field of the response.
-//     ///
-//     /// This is the 8th bit of the raw error field.
-//     ///
-//     /// If this bit is set, you can normally check the "Hardware Error" register for more details.
-//     /// Consult the manual of your motor for more information.
-//     pub fn alert(&self) -> bool {
-//         self.raw & 0x80 != 0
-//     }
-// }
-//
-// impl Debug for MotorError {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-//         f.debug_struct("MotorError")
-//             .field("error_number", &self.error_number())
-//             .field("alert", &self.alert())
-//             .finish()
-//     }
-// }
+/// An error reported by the motor.
+#[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
+pub struct MotorError {
+    /// The raw error as returned by the motor.
+    pub flags: ErrorFlags,
+}
 
 /// The received message has an invalid checksum value.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
@@ -198,21 +172,23 @@ impl BufferTooSmallError {
     }
 }
 
-// impl MotorError {
-//     /// Check for a motor error in the response.
-//     ///
-//     /// This ignores the `alert` bit,
-//     /// since it indicates a hardware error and not a failed instruction.
-//     pub fn check(raw: u8) -> Result<(), Self> {
-//         // Ignore the alert bit for this check.
-//         // If the alert bit is set, the motor encountered an error, but the instruction was still executed.
-//         if raw & !0x80 == 0 {
-//             Ok(())
-//         } else {
-//             Err(Self { raw })
-//         }
-//     }
-// }
+impl MotorError {
+    /// Check for a motor error in the response.
+    ///
+    /// This ignores the `alert` bit,
+    /// since it indicates a hardware error and not a failed instruction.
+    pub fn check(flags: Option<ErrorFlags>) -> Result<(), Self> {
+        // Ignore the alert bit for this check.
+        // If the alert bit is set, the motor encountered an error, but the instruction was still executed.
+        let Some(flags) = flags else { return Ok(()) };
+
+        if flags.intersects(ERROR_FLAGS) {
+            Err(Self { flags })
+        } else {
+            Ok(())
+        }
+    }
+}
 
 impl InvalidPacketId {
     /// Check if the packet ID matches the expected value.

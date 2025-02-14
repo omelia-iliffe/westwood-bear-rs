@@ -1,5 +1,8 @@
 pub mod registers;
 pub use registers::{Register, RegisterType};
+mod motor_error;
+pub use motor_error::ErrorFlags;
+pub(crate) use motor_error::ERROR_FLAGS;
 mod response;
 
 pub use response::Response;

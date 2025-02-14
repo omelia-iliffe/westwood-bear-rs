@@ -1,6 +1,6 @@
-use crate::checksum;
 use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
 use crate::protocol::{Response, PACKET_ERROR, PACKET_ID, PACKET_LEN};
+use crate::{checksum, ErrorFlags};
 use core::time::Duration;
 use log::{debug, trace};
 
@@ -261,7 +261,7 @@ where
         let packet = self.read_packet_deadline(deadline)?;
         let response = Response {
             motor_id: packet[PACKET_ID],
-            error: packet[PACKET_ERROR],
+            warning: ErrorFlags::from_bits(packet[PACKET_ERROR]),
             data: &packet[5..],
         };
         Ok(response)

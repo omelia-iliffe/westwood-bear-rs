@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start_pos = bear.read::<registers::PresentPos>(ID)?.data;
 
     bear.write::<registers::GoalPos>(ID, start_pos)?;
+    bear.write::<registers::TorqueEnable>(ID, 1)?;
 
     for _ in 1..10 {
         bear.write::<registers::GoalPos>(ID, start_pos - 0.5)?;
