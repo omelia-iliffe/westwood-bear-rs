@@ -1,11 +1,6 @@
 use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
 use crate::{Instruction, Response};
 
-#[derive(Debug)]
-enum RegisterType {
-    Config,
-    Status,
-}
 pub trait Register {
     /// The inner type that the can be read or written to the register
     type Inner;
@@ -31,7 +26,7 @@ const fn to_u8(input: usize) -> u8 {
     input as u8
 }
 macro_rules! register {
-    (@REGISTER $register:ident : $r_type:expr, $addr:expr, $inner:ty) => {
+    (@REGISTER $register:ident : $r_inst:expr, $addr:expr, $inner:ty) => {
         #[derive(Debug, Clone, PartialEq)]
         #[doc = concat!("[`",stringify!($register),"`] register at address `",stringify!($addr), "`")]
         #[doc = concat!("[`",stringify!($register),"`] is of type [`", stringify!($inner), "`]")]
@@ -41,10 +36,7 @@ macro_rules! register {
             type Inner = $inner;
             const ADDR: u8 = $addr as u8;
 
-            const READ_INST: Instruction = match $r_type {
-                RegisterType::Config => Instruction::ReadCfg,
-                RegisterType::Status => Instruction::ReadStat,
-            };
+            const READ_INST: Instruction = $r_inst;
 
             fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -64,15 +56,12 @@ macro_rules! register {
         }
     };
 
-    (@WRITABLE $register:ident : $r_type:expr, $addr:expr, $inner:ty) => {
-        register!(@REGISTER $register: $r_type, $addr, $inner);
+    (@WRITABLE $register:ident : $r_inst:expr, $w_inst:expr, $addr:expr, $inner:ty) => {
+        register!(@REGISTER $register: $r_inst, $addr, $inner);
         impl WritableRegister for $register {
             const ENCODED_SIZE: u8 = to_u8(core::mem::size_of::<Self::Inner>());
 
-            const WRITE_INST: Instruction = match $r_type {
-                RegisterType::Config => Instruction::WriteCfg,
-                RegisterType::Status => Instruction::WriteStat,
-            };
+            const WRITE_INST: Instruction = $w_inst;
 
             fn encode(data: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -91,75 +80,70 @@ macro_rules! register {
             }
         }
     };
-    (@RW_TYPE $register:ident : $r_type:expr, $addr:expr, $inner:ty, RW) => {
-        register!(@WRITABLE $register: $r_type, $addr, $inner);
+    (ConfigRegister::$register:ident, $inner:ty, RW) => {
+        register!(@WRITABLE $register: Instruction::ReadCfg, Instruction::WriteCfg, crate::protocol::ConfigRegister::$register, $inner);
     };
-    (@RW_TYPE $register:ident : $r_type:expr, $addr:expr, $inner:ty, RO) => {
-        register!(@REGISTER $register: $r_type, $addr, $inner);
+    (StatusRegister::$register:ident, $inner:ty, RW) => {
+        register!(@WRITABLE $register: Instruction::ReadStat, Instruction::WriteStat, crate::protocol::StatusRegister::$register, $inner);
     };
-    (ConfigRegister::$register:ident, $inner:ty, $rw:ident) => {
-        register!(@RW_TYPE $register: RegisterType::Config, crate::protocol::ConfigRegister::$register, $inner, $rw);
+    (ConfigRegister::$register:ident, $inner:ty, RO) => {
+        register!(@REGISTER $register: Instruction::ReadStat, crate::protocol::ConfigRegister::$register, $inner);
     };
-    (StatusRegister::$register:ident, $inner:ty, $rw:ident) => {
-        register!(@RW_TYPE $register: RegisterType::Status, crate::protocol::StatusRegister::$register, $inner, $rw);
+    (StatusRegister::$register:ident, $inner:ty, R0) => {
+        register!(@REGISTER $register: Instruction::ReadCfg, crate::protocol::StatusRegister::$register, $inner);
     };
+
 }
 
-register!(ConfigRegister::Id, u32, RW);
-register!(ConfigRegister::Mode, u32, RW);
-register!(ConfigRegister::BaudRate, u32, RW);
-register!(ConfigRegister::HomingOffset, f32, RW);
-register!(ConfigRegister::PGainId, f32, RW);
-register!(ConfigRegister::IGainId, f32, RW);
-register!(ConfigRegister::DGainId, f32, RW);
-register!(ConfigRegister::PGainIq, f32, RW);
-register!(ConfigRegister::IGainIq, f32, RW);
-register!(ConfigRegister::DGainIq, f32, RW);
-register!(ConfigRegister::PGainVel, f32, RW);
-register!(ConfigRegister::IGainVel, f32, RW);
-register!(ConfigRegister::DGainVel, f32, RW);
-register!(ConfigRegister::PGainPos, f32, RW);
-register!(ConfigRegister::IGainPos, f32, RW);
-register!(ConfigRegister::DGainPos, f32, RW);
-register!(ConfigRegister::PGainForce, f32, RW);
-register!(ConfigRegister::IGainForce, f32, RW);
-register!(ConfigRegister::DGainForce, f32, RW);
-register!(ConfigRegister::LimitAccMax, f32, RW);
-register!(ConfigRegister::LimitIMax, f32, RW);
-register!(ConfigRegister::LimitVelMax, f32, RW);
-register!(ConfigRegister::LimitPosMin, f32, RW);
-register!(ConfigRegister::LimitPosMax, f32, RW);
-register!(ConfigRegister::MinVoltage, f32, RW);
-register!(ConfigRegister::MaxVoltage, f32, RW);
-register!(ConfigRegister::WatchdogTimeout, u32, RW);
-register!(ConfigRegister::TempLimitLow, f32, RW);
-register!(ConfigRegister::TempLimitHigh, f32, RW);
+pub mod config {
+    use super::*;
+    register!(ConfigRegister::Id, u32, RW);
+    register!(ConfigRegister::Mode, u32, RW);
+    register!(ConfigRegister::BaudRate, u32, RW);
+    register!(ConfigRegister::HomingOffset, f32, RW);
+    register!(ConfigRegister::PGainId, f32, RW);
+    register!(ConfigRegister::IGainId, f32, RW);
+    register!(ConfigRegister::DGainId, f32, RW);
+    register!(ConfigRegister::PGainIq, f32, RW);
+    register!(ConfigRegister::IGainIq, f32, RW);
+    register!(ConfigRegister::DGainIq, f32, RW);
+    register!(ConfigRegister::PGainVel, f32, RW);
+    register!(ConfigRegister::IGainVel, f32, RW);
+    register!(ConfigRegister::DGainVel, f32, RW);
+    register!(ConfigRegister::PGainPos, f32, RW);
+    register!(ConfigRegister::IGainPos, f32, RW);
+    register!(ConfigRegister::DGainPos, f32, RW);
+    register!(ConfigRegister::PGainForce, f32, RW);
+    register!(ConfigRegister::IGainForce, f32, RW);
+    register!(ConfigRegister::DGainForce, f32, RW);
+    register!(ConfigRegister::LimitAccMax, f32, RW);
+    register!(ConfigRegister::LimitIMax, f32, RW);
+    register!(ConfigRegister::LimitVelMax, f32, RW);
+    register!(ConfigRegister::LimitPosMin, f32, RW);
+    register!(ConfigRegister::LimitPosMax, f32, RW);
+    register!(ConfigRegister::MinVoltage, f32, RW);
+    register!(ConfigRegister::MaxVoltage, f32, RW);
+    register!(ConfigRegister::WatchdogTimeout, u32, RW);
+    register!(ConfigRegister::TempLimitLow, f32, RW);
+    register!(ConfigRegister::TempLimitHigh, f32, RW);
+}
 
-register!(StatusRegister::TorqueEnable, u32, RW);
-register!(StatusRegister::HomingComplete, f32, RW);
-register!(StatusRegister::GoalId, f32, RW);
-register!(StatusRegister::GoalIq, f32, RW);
-register!(StatusRegister::GoalVel, f32, RW);
-register!(StatusRegister::GoalPos, f32, RW);
-register!(StatusRegister::PresentId, f32, RW);
-register!(StatusRegister::PresentIq, f32, RW);
-register!(StatusRegister::PresentVel, f32, RW);
-register!(StatusRegister::PresentPos, f32, RW);
-register!(StatusRegister::InputVoltage, f32, RW);
-register!(StatusRegister::WindingTemp, f32, RW);
-register!(StatusRegister::PowerstageTemp, f32, RW);
-register!(StatusRegister::IcTemp, f32, RW);
-register!(StatusRegister::ErrorStatus, f32, RW);
-register!(StatusRegister::WarningStatus, f32, RW);
-
-#[cfg(test)]
-mod test {
-    use crate::Bus;
-
-    #[test]
-    fn test_fn() {
-        let mut bus: Bus = todo!();
-        bus.read_id(1).unwrap();
-        bus.write_id(1, 1).unwrap();
-    }
+pub mod status {
+    use super::*;
+    register!(StatusRegister::TorqueEnable, u32, RW);
+    register!(StatusRegister::HomingComplete, f32, RW);
+    register!(StatusRegister::GoalId, f32, RW);
+    register!(StatusRegister::GoalIq, f32, RW);
+    register!(StatusRegister::GoalVel, f32, RW);
+    register!(StatusRegister::GoalPos, f32, RW);
+    register!(StatusRegister::PresentId, f32, RW);
+    register!(StatusRegister::PresentIq, f32, RW);
+    register!(StatusRegister::PresentVel, f32, RW);
+    register!(StatusRegister::PresentPos, f32, RW);
+    register!(StatusRegister::InputVoltage, f32, RW);
+    register!(StatusRegister::WindingTemp, f32, RW);
+    register!(StatusRegister::PowerstageTemp, f32, RW);
+    register!(StatusRegister::IcTemp, f32, RW);
+    register!(StatusRegister::ErrorStatus, f32, RW);
+    register!(StatusRegister::WarningStatus, f32, RW);
 }

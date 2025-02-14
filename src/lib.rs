@@ -60,13 +60,13 @@ mod tests {
     #[test]
     fn read() {
         let mut bus = setup_bus();
-        let r = bus.read::<crate::registers::Id>(1).unwrap();
+        let r = bus.read::<crate::registers::config::Id>(1).unwrap();
         dbg!(r);
     }
 
     #[test]
     fn write() {
         let mut bus = setup_bus();
-        bus.write::<crate::registers::TorqueEnable>(1, 1).unwrap()
+        bus.write::<crate::registers::status::TorqueEnable>(1, 1).unwrap()
     }
 }
