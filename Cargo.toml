@@ -8,6 +8,7 @@ serial2 = { version = "0.2.28", optional = true }
 log = "0.4.25"
 derive_more = { version = "2.0.1", features = ["from", "error", "display", "debug"] }
 bitflags = "2.8.0"
+paste = "1.0.15"
 
 [dev-dependencies]
 test-log = "0.2.17"

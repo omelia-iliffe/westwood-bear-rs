@@ -1,6 +1,6 @@
 use crate::bus::Bus;
-use crate::error::{MotorError, TransferError};
-use crate::protocol::{Instruction, RegisterType, Response};
+use crate::error::TransferError;
+use crate::protocol::Response;
 
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
@@ -19,7 +19,6 @@ where
             Ok(())
         })?;
         let r = self.read_response(length + 1)?;
-        MotorError::check(r.warning)?;
         Ok(r)
     }
 
@@ -27,11 +26,10 @@ where
         &mut self,
         motor_id: u8,
     ) -> Result<Response<R::Inner>, TransferError<SerialPort::Error>> {
-        let inst = match R::REG_TYPE {
-            RegisterType::Config => Instruction::ReadCfg,
-            RegisterType::Status => Instruction::ReadStat,
-        };
-        let r = self.read_raw(motor_id, inst as u8, R::ADDR, 4)?;
+        let r = self.transfer_single(motor_id, R::READ_INST as u8, 1, 5, |buffer| {
+            buffer[0] = R::ADDR;
+            Ok(())
+        })?;
         let r = Response {
             motor_id: r.motor_id,
             warning: r.warning,

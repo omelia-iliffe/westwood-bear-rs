@@ -1,6 +1,6 @@
 use crate::bus::Bus;
 use crate::error::WriteError;
-use crate::protocol::{Instruction, Register, RegisterType};
+use crate::registers::WritableRegister;
 
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
@@ -21,12 +21,12 @@ where
         })
     }
 
-    pub fn write<R: Register>(&mut self, motor_id: u8, data: R::Inner) -> Result<(), WriteError<SerialPort::Error>> {
-        let inst = match R::REG_TYPE {
-            RegisterType::Config => Instruction::WriteCfg,
-            RegisterType::Status => Instruction::WriteStat,
-        };
-        self.write_packet(motor_id, inst as u8, R::ENCODED_SIZE as usize + 1, |buffer| {
+    pub fn write<R: WritableRegister>(
+        &mut self,
+        motor_id: u8,
+        data: R::Inner,
+    ) -> Result<(), WriteError<SerialPort::Error>> {
+        self.write_packet(motor_id, R::WRITE_INST as u8, R::ENCODED_SIZE as usize + 1, |buffer| {
             buffer[0] = R::ADDR;
             R::encode(data, &mut buffer[1..])?;
             Ok(())

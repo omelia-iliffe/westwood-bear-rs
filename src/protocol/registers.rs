@@ -1,26 +1,29 @@
-#![allow(non_camel_case_types)]
-use crate::error::{BufferTooSmallError, InvalidMessage};
+use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
+use crate::{Instruction, Response};
 
 #[derive(Debug)]
-pub enum RegisterType {
+enum RegisterType {
     Config,
     Status,
 }
 pub trait Register {
     /// The inner type that the can be read or written to the register
     type Inner;
-    /// The type of Register, either [`RegisterType::Config`] or [`RegisterType::Status`]
-    const REG_TYPE: RegisterType;
+    const READ_INST: Instruction;
     /// The address that register data is read from or written to
     const ADDR: u8;
-    /// The number of bytes of the register
-    const ENCODED_SIZE: u8;
-
-    /// Encode the value into the given buffer.
-    fn encode(value: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError>;
 
     /// Decode the value from the given buffer.
     fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage>;
+}
+
+pub trait WritableRegister: Register {
+    /// The number of bytes of the register
+    const ENCODED_SIZE: u8;
+
+    const WRITE_INST: Instruction;
+    /// Encode the value into the given buffer.
+    fn encode(value: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError>;
 }
 
 const fn to_u8(input: usize) -> u8 {
@@ -28,24 +31,20 @@ const fn to_u8(input: usize) -> u8 {
     input as u8
 }
 macro_rules! register {
-    (@REGISTER $reg:ident : $r_type:expr, $addr:expr, $inner:ty) => {
+    (@REGISTER $register:ident : $r_type:expr, $addr:expr, $inner:ty) => {
         #[derive(Debug, Clone, PartialEq)]
-        #[doc = concat!("[`",stringify!($reg),"`] register at address `",stringify!($addr), "`")]
-        #[doc = concat!("[`",stringify!($reg),"`] is of type [`", stringify!($inner), "`]")]
-        pub struct $reg;
+        #[doc = concat!("[`",stringify!($register),"`] register at address `",stringify!($addr), "`")]
+        #[doc = concat!("[`",stringify!($register),"`] is of type [`", stringify!($inner), "`]")]
+        pub struct $register;
 
-        impl Register for $reg {
+        impl Register for $register {
             type Inner = $inner;
-            const REG_TYPE: RegisterType = $r_type;
             const ADDR: u8 = $addr as u8;
-            const ENCODED_SIZE: u8 = to_u8(core::mem::size_of::<Self::Inner>());
 
-            fn encode(data: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError> {
-                const N: usize = core::mem::size_of::<$inner>();
-                crate::error::BufferTooSmallError::check(N, buffer.len())?;
-                buffer[..N].copy_from_slice(&data.to_le_bytes());
-                Ok(())
-            }
+            const READ_INST: Instruction = match $r_type {
+                RegisterType::Config => Instruction::ReadCfg,
+                RegisterType::Status => Instruction::ReadStat,
+            };
 
             fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -54,58 +53,113 @@ macro_rules! register {
                 Ok(value)
             }
         }
+        impl<SerialPort, Buffer> crate::Bus<SerialPort, Buffer>
+            where SerialPort: crate::SerialPort,
+                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+            paste::item!{
+                pub fn [<read_ $register:snake>](&mut self, id: u8) -> Result<Response<$inner>, TransferError<SerialPort::Error>> {
+                    self.read::<$register>(id)
+                }
+            }
+        }
     };
-    (ConfigRegister::$register:ident, $inner:ty) => {
-        register!(@REGISTER $register: RegisterType::Config, crate::protocol::ConfigRegister::$register, $inner);
+
+    (@WRITABLE $register:ident : $r_type:expr, $addr:expr, $inner:ty) => {
+        register!(@REGISTER $register: $r_type, $addr, $inner);
+        impl WritableRegister for $register {
+            const ENCODED_SIZE: u8 = to_u8(core::mem::size_of::<Self::Inner>());
+
+            const WRITE_INST: Instruction = match $r_type {
+                RegisterType::Config => Instruction::WriteCfg,
+                RegisterType::Status => Instruction::WriteStat,
+            };
+
+            fn encode(data: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError> {
+                const N: usize = core::mem::size_of::<$inner>();
+                crate::error::BufferTooSmallError::check(N, buffer.len())?;
+                buffer[..N].copy_from_slice(&data.to_le_bytes());
+                Ok(())
+            }
+        }
+        impl<SerialPort, Buffer> crate::Bus<SerialPort, Buffer>
+            where SerialPort: crate::SerialPort,
+                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+            paste::item!{
+                pub fn [<write_ $register:snake>](&mut self, id: u8, data: $inner) -> Result<(), WriteError<SerialPort::Error>> {
+                    self.write::<$register>(id, data)
+                }
+            }
+        }
     };
-    (StatusRegister::$register:ident, $inner:ty) => {
-        register!(@REGISTER $register: RegisterType::Status, crate::protocol::StatusRegister::$register, $inner);
+    (@RW_TYPE $register:ident : $r_type:expr, $addr:expr, $inner:ty, RW) => {
+        register!(@WRITABLE $register: $r_type, $addr, $inner);
+    };
+    (@RW_TYPE $register:ident : $r_type:expr, $addr:expr, $inner:ty, RO) => {
+        register!(@REGISTER $register: $r_type, $addr, $inner);
+    };
+    (ConfigRegister::$register:ident, $inner:ty, $rw:ident) => {
+        register!(@RW_TYPE $register: RegisterType::Config, crate::protocol::ConfigRegister::$register, $inner, $rw);
+    };
+    (StatusRegister::$register:ident, $inner:ty, $rw:ident) => {
+        register!(@RW_TYPE $register: RegisterType::Status, crate::protocol::StatusRegister::$register, $inner, $rw);
     };
 }
 
-register!(ConfigRegister::ID, u32);
-register!(ConfigRegister::Mode, u32);
-register!(ConfigRegister::BaudRate, u32);
-register!(ConfigRegister::HomingOffset, f32);
-register!(ConfigRegister::PGainId, f32);
-register!(ConfigRegister::IGainId, f32);
-register!(ConfigRegister::DGainId, f32);
-register!(ConfigRegister::PGainIq, f32);
-register!(ConfigRegister::IGainIq, f32);
-register!(ConfigRegister::DGainIq, f32);
-register!(ConfigRegister::PGainVel, f32);
-register!(ConfigRegister::IGainVel, f32);
-register!(ConfigRegister::DGainVel, f32);
-register!(ConfigRegister::PGainPos, f32);
-register!(ConfigRegister::IGainPos, f32);
-register!(ConfigRegister::DGainPos, f32);
-register!(ConfigRegister::PGainForce, f32);
-register!(ConfigRegister::IGainForce, f32);
-register!(ConfigRegister::DGainForce, f32);
-register!(ConfigRegister::LimitAccMax, f32);
-register!(ConfigRegister::LimitIMax, f32);
-register!(ConfigRegister::LimitVelMax, f32);
-register!(ConfigRegister::LimitPosMin, f32);
-register!(ConfigRegister::LimitPosMax, f32);
-register!(ConfigRegister::MinVoltage, f32);
-register!(ConfigRegister::MaxVoltage, f32);
-register!(ConfigRegister::WatchdogTimeout, u32);
-register!(ConfigRegister::TempLimitLow, f32);
-register!(ConfigRegister::TempLimitHigh, f32);
+register!(ConfigRegister::Id, u32, RW);
+register!(ConfigRegister::Mode, u32, RW);
+register!(ConfigRegister::BaudRate, u32, RW);
+register!(ConfigRegister::HomingOffset, f32, RW);
+register!(ConfigRegister::PGainId, f32, RW);
+register!(ConfigRegister::IGainId, f32, RW);
+register!(ConfigRegister::DGainId, f32, RW);
+register!(ConfigRegister::PGainIq, f32, RW);
+register!(ConfigRegister::IGainIq, f32, RW);
+register!(ConfigRegister::DGainIq, f32, RW);
+register!(ConfigRegister::PGainVel, f32, RW);
+register!(ConfigRegister::IGainVel, f32, RW);
+register!(ConfigRegister::DGainVel, f32, RW);
+register!(ConfigRegister::PGainPos, f32, RW);
+register!(ConfigRegister::IGainPos, f32, RW);
+register!(ConfigRegister::DGainPos, f32, RW);
+register!(ConfigRegister::PGainForce, f32, RW);
+register!(ConfigRegister::IGainForce, f32, RW);
+register!(ConfigRegister::DGainForce, f32, RW);
+register!(ConfigRegister::LimitAccMax, f32, RW);
+register!(ConfigRegister::LimitIMax, f32, RW);
+register!(ConfigRegister::LimitVelMax, f32, RW);
+register!(ConfigRegister::LimitPosMin, f32, RW);
+register!(ConfigRegister::LimitPosMax, f32, RW);
+register!(ConfigRegister::MinVoltage, f32, RW);
+register!(ConfigRegister::MaxVoltage, f32, RW);
+register!(ConfigRegister::WatchdogTimeout, u32, RW);
+register!(ConfigRegister::TempLimitLow, f32, RW);
+register!(ConfigRegister::TempLimitHigh, f32, RW);
 
-register!(StatusRegister::TorqueEnable, u32);
-register!(StatusRegister::HomingComplete, f32);
-register!(StatusRegister::GoalId, f32);
-register!(StatusRegister::GoalIq, f32);
-register!(StatusRegister::GoalVel, f32);
-register!(StatusRegister::GoalPos, f32);
-register!(StatusRegister::PresentId, f32);
-register!(StatusRegister::PresentIq, f32);
-register!(StatusRegister::PresentVel, f32);
-register!(StatusRegister::PresentPos, f32);
-register!(StatusRegister::InputVoltage, f32);
-register!(StatusRegister::WindingTemp, f32);
-register!(StatusRegister::PowerstageTemp, f32);
-register!(StatusRegister::IcTemp, f32);
-register!(StatusRegister::ErrorStatus, f32);
-register!(StatusRegister::WarningStatus, f32);
+register!(StatusRegister::TorqueEnable, u32, RW);
+register!(StatusRegister::HomingComplete, f32, RW);
+register!(StatusRegister::GoalId, f32, RW);
+register!(StatusRegister::GoalIq, f32, RW);
+register!(StatusRegister::GoalVel, f32, RW);
+register!(StatusRegister::GoalPos, f32, RW);
+register!(StatusRegister::PresentId, f32, RW);
+register!(StatusRegister::PresentIq, f32, RW);
+register!(StatusRegister::PresentVel, f32, RW);
+register!(StatusRegister::PresentPos, f32, RW);
+register!(StatusRegister::InputVoltage, f32, RW);
+register!(StatusRegister::WindingTemp, f32, RW);
+register!(StatusRegister::PowerstageTemp, f32, RW);
+register!(StatusRegister::IcTemp, f32, RW);
+register!(StatusRegister::ErrorStatus, f32, RW);
+register!(StatusRegister::WarningStatus, f32, RW);
+
+#[cfg(test)]
+mod test {
+    use crate::Bus;
+
+    #[test]
+    fn test_fn() {
+        let mut bus: Bus = todo!();
+        bus.read_id(1).unwrap();
+        bus.write_id(1, 1).unwrap();
+    }
+}
