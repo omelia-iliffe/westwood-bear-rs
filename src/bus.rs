@@ -1,4 +1,4 @@
-use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
+use crate::error::{BufferTooSmallError, MotorError, ReadError, TransferError, WriteError};
 use crate::protocol::{Response, PACKET_ERROR, PACKET_ID, PACKET_LEN};
 use crate::{checksum, ErrorFlags};
 use core::time::Duration;
@@ -170,7 +170,8 @@ where
     /// Write a raw instruction to a stream, and read a single raw response.
     ///
     /// This function also checks that the packet ID of the status response matches the one from the instruction.
-    pub fn transfer_single<F>(
+    /// and that the error byte does not contain any [`crate::ERROR_FLAGS`]. [`crate::WARNING_FLAGS`] are allowed.
+    pub(crate) fn transfer_single<F>(
         &mut self,
         packet_id: u8,
         instruction_id: u8,
@@ -184,10 +185,11 @@ where
         self.write_packet(packet_id, instruction_id, parameter_count, encode_parameters)?;
         let response = self.read_response(expected_response_parameters)?;
         crate::error::InvalidPacketId::check(response.motor_id, packet_id)?;
+        MotorError::check(response.warning)?;
         Ok(response)
     }
     /// Write a packet to the bus.
-    pub fn make_packet<F>(
+    pub(crate) fn make_packet<F>(
         buffer: &mut [u8],
         packet_id: u8,
         instruction_id: u8,
@@ -216,7 +218,7 @@ where
 
         Ok(checksum_index + 1)
     }
-    pub fn write_packet<F>(
+    pub(crate) fn write_packet<F>(
         &mut self,
         packet_id: u8,
         instruction_id: u8,

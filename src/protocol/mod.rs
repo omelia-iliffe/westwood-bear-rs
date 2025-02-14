@@ -1,8 +1,8 @@
 pub mod registers;
-pub use registers::{Register, RegisterType};
+pub use registers::Register;
 mod motor_error;
 pub use motor_error::ErrorFlags;
-pub(crate) use motor_error::ERROR_FLAGS;
+pub use motor_error::{ERROR_FLAGS, WARNING_FLAGS};
 mod response;
 
 pub use response::Response;
@@ -23,10 +23,10 @@ pub enum Instruction {
 }
 
 /// Registers used to set motor configuration
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum ConfigRegister {
-    ID = 0x00,
+    Id = 0x00,
     Mode = 0x01,
     BaudRate = 0x02,
     HomingOffset = 0x03,
@@ -65,9 +65,9 @@ pub enum ConfigRegister {
 }
 
 /// Status Registers
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub enum StatusRegister {
+pub(crate) enum StatusRegister {
     TorqueEnable = 0x00, // Enable output
     HomingComplete = 0x01,
     GoalId = 0x02,

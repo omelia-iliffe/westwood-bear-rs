@@ -60,7 +60,7 @@ mod tests {
     #[test]
     fn read() {
         let mut bus = setup_bus();
-        let r = bus.read::<crate::registers::ID>(1).unwrap();
+        let r = bus.read::<crate::registers::Id>(1).unwrap();
         dbg!(r);
     }
 

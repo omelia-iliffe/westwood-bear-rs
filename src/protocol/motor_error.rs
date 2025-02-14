@@ -28,8 +28,8 @@ bitflags! {
     }
 }
 
-pub(crate) const WARNING_FLAGS: ErrorFlags = ErrorFlags::OVERHEAT.union(ErrorFlags::COMMUNICATION);
-pub(crate) const ERROR_FLAGS: ErrorFlags = WARNING_FLAGS.complement();
+pub const WARNING_FLAGS: ErrorFlags = ErrorFlags::OVERHEAT.union(ErrorFlags::COMMUNICATION);
+pub const ERROR_FLAGS: ErrorFlags = WARNING_FLAGS.complement();
 
 impl Display for ErrorFlags {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
