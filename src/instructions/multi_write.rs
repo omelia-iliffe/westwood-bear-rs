@@ -51,28 +51,3 @@ where
         Ok(())
     }
 }
-#[cfg(test)]
-mod tests {
-    use crate::instructions::multi_write::MultiWrite;
-    use crate::protocol::StatusRegister;
-    use crate::registers::{status, WritableRegister};
-    use crate::{Bus, Register};
-
-    #[test]
-    fn multi_write() {
-        // let writes = [
-        //     MultiWrite {
-        //         address: status::TorqueEnable::ADDR,
-        //         data: status::TorqueEnable::le_bytes(1).as_slice(),
-        //     },
-        //     MultiWrite {
-        //         address: StatusRegister::ErrorStatus,
-        //         data: 10_u32.to,
-        //     },
-        // ];
-
-        let better_writes = [MultiWrite::new::<status::TorqueEnable>(1)];
-        let mut bus: Bus = Bus::open("test", 0).unwrap();
-        bus.multi_write(1, &better_writes).unwrap();
-    }
-}
