@@ -1,6 +1,7 @@
 use crate::bus::Bus;
 use crate::error::TransferError;
 use crate::protocol::Response;
+use crate::Address;
 
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
@@ -26,8 +27,8 @@ where
         &mut self,
         motor_id: u8,
     ) -> Result<Response<R::Inner>, TransferError<SerialPort::Error>> {
-        let r = self.transfer_single(motor_id, R::READ_INST as u8, 1, 5, |buffer| {
-            buffer[0] = R::ADDR;
+        let r = self.transfer_single(motor_id, R::RegisterType::READ_INST as u8, 1, 5, |buffer| {
+            buffer[0] = R::ADDRESS.as_byte();
             Ok(())
         })?;
         let r = Response {

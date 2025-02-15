@@ -1,12 +1,14 @@
 use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
-use crate::{Instruction, Response};
+use crate::protocol::{ConfigRegister, StatusRegister};
+use crate::{Address, Response};
 
 pub trait Register {
     /// The inner type that the can be read or written to the register
     type Inner;
-    const READ_INST: Instruction;
+    /// Either [`StatusRegister`] or [`ConfigRegister`]
+    type RegisterType: Address;
     /// The address that register data is read from or written to
-    const ADDR: u8;
+    const ADDRESS: Self::RegisterType;
 
     /// Decode the value from the given buffer.
     fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage>;
@@ -16,9 +18,10 @@ pub trait WritableRegister: Register {
     /// The number of bytes of the register
     const ENCODED_SIZE: u8;
 
-    const WRITE_INST: Instruction;
     /// Encode the value into the given buffer.
     fn encode(value: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError>;
+    /// Encode the value into bytes
+    fn encode_bytes(data: Self::Inner) -> [u8; 4];
 }
 
 const fn to_u8(input: usize) -> u8 {
@@ -26,7 +29,7 @@ const fn to_u8(input: usize) -> u8 {
     input as u8
 }
 macro_rules! register {
-    (@REGISTER $register:ident : $r_inst:expr, $addr:expr, $inner:ty) => {
+    (@REGISTER $register:ident : $r_type:ty, $addr:expr, $inner:ty) => {
         #[derive(Debug, Clone, PartialEq)]
         #[doc = concat!("[`",stringify!($register),"`] register at address `",stringify!($addr), "`")]
         #[doc = concat!("[`",stringify!($register),"`] is of type [`", stringify!($inner), "`]")]
@@ -34,9 +37,8 @@ macro_rules! register {
 
         impl Register for $register {
             type Inner = $inner;
-            const ADDR: u8 = $addr as u8;
-
-            const READ_INST: Instruction = $r_inst;
+            type RegisterType = $r_type;
+            const ADDRESS: Self::RegisterType = $addr;
 
             fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -56,18 +58,20 @@ macro_rules! register {
         }
     };
 
-    (@WRITABLE $register:ident : $r_inst:expr, $w_inst:expr, $addr:expr, $inner:ty) => {
-        register!(@REGISTER $register: $r_inst, $addr, $inner);
+    (@WRITABLE $register:ident : $r_type:ty, $addr:expr, $inner:ty) => {
+        register!(@REGISTER $register: $r_type, $addr, $inner);
         impl WritableRegister for $register {
             const ENCODED_SIZE: u8 = to_u8(core::mem::size_of::<Self::Inner>());
-
-            const WRITE_INST: Instruction = $w_inst;
 
             fn encode(data: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError> {
                 const N: usize = core::mem::size_of::<$inner>();
                 crate::error::BufferTooSmallError::check(N, buffer.len())?;
                 buffer[..N].copy_from_slice(&data.to_le_bytes());
                 Ok(())
+            }
+
+            fn encode_bytes(data: Self::Inner) -> [u8; core::mem::size_of::<Self::Inner>()] {
+                data.to_le_bytes()
             }
         }
         impl<SerialPort, Buffer> crate::Bus<SerialPort, Buffer>
@@ -81,16 +85,16 @@ macro_rules! register {
         }
     };
     (ConfigRegister::$register:ident, $inner:ty, RW) => {
-        register!(@WRITABLE $register: Instruction::ReadCfg, Instruction::WriteCfg, crate::protocol::ConfigRegister::$register, $inner);
+        register!(@WRITABLE  $register: ConfigRegister, ConfigRegister::$register, $inner);
     };
     (StatusRegister::$register:ident, $inner:ty, RW) => {
-        register!(@WRITABLE $register: Instruction::ReadStat, Instruction::WriteStat, crate::protocol::StatusRegister::$register, $inner);
+        register!(@WRITABLE $register: StatusRegister, StatusRegister::$register, $inner);
     };
     (ConfigRegister::$register:ident, $inner:ty, RO) => {
-        register!(@REGISTER $register: Instruction::ReadStat, crate::protocol::ConfigRegister::$register, $inner);
+        register!(@REGISTER $register: ConfigRegister, ConfigRegister::$register, $inner);
     };
     (StatusRegister::$register:ident, $inner:ty, R0) => {
-        register!(@REGISTER $register: Instruction::ReadCfg, crate::protocol::StatusRegister::$register, $inner);
+        register!(@REGISTER $register: StatusRegister, StatusRegister::$register, $inner);
     };
 
 }

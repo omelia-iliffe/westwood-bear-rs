@@ -67,7 +67,7 @@ pub enum ConfigRegister {
 /// Status Registers
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum StatusRegister {
+pub enum StatusRegister {
     TorqueEnable = 0x00, // Enable output
     HomingComplete = 0x01,
     GoalId = 0x02,
@@ -84,4 +84,32 @@ pub(crate) enum StatusRegister {
     IcTemp = 0x0D,
     ErrorStatus = 0x0E,
     WarningStatus = 0x0F,
+}
+
+/// Provides the corresponding instructions for writing to the Status or Config registers
+pub trait Address {
+    /// The corresponding write instruction
+    const WRITE_INST: Instruction;
+    /// The corresponding read instruction
+    const READ_INST: Instruction;
+
+    /// Returns the register address as u8
+    fn as_byte(&self) -> u8;
+}
+
+impl Address for StatusRegister {
+    const WRITE_INST: Instruction = Instruction::WriteStat;
+    const READ_INST: Instruction = Instruction::ReadStat;
+
+    fn as_byte(&self) -> u8 {
+        *self as u8
+    }
+}
+impl Address for ConfigRegister {
+    const WRITE_INST: Instruction = Instruction::WriteCfg;
+    const READ_INST: Instruction = Instruction::ReadCfg;
+
+    fn as_byte(&self) -> u8 {
+        *self as u8
+    }
 }
