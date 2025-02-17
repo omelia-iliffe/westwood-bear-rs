@@ -1,4 +1,6 @@
 pub mod registers;
+
+use derive_more::Display;
 pub use registers::Register;
 mod motor_error;
 pub use motor_error::ErrorFlags;
@@ -23,7 +25,7 @@ pub enum Instruction {
 }
 
 /// Registers used to set motor configuration
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[repr(u8)]
 pub enum ConfigRegister {
     Id = 0x00,
@@ -65,7 +67,7 @@ pub enum ConfigRegister {
 }
 
 /// Status Registers
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[repr(u8)]
 pub enum StatusRegister {
     TorqueEnable = 0x00, // Enable output

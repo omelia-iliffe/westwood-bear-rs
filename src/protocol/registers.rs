@@ -1,9 +1,10 @@
-use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
+use crate::error::{BufferTooSmallError, InvalidMessage};
 use crate::protocol::{ConfigRegister, StatusRegister};
-use crate::{Address, Response};
+use crate::Address;
 
 pub trait Register {
-    /// The inner type that the can be read or written to the register
+    const NAME: &'static str;
+    /// The inner type that can be read or written to the register
     type Inner;
     /// Either [`StatusRegister`] or [`ConfigRegister`]
     type RegisterType: Address;
@@ -36,6 +37,7 @@ macro_rules! register {
         pub struct $register;
 
         impl Register for $register {
+            const NAME: &'static str = stringify!($register);
             type Inner = $inner;
             type RegisterType = $r_type;
             const ADDRESS: Self::RegisterType = $addr;
@@ -149,5 +151,5 @@ pub mod status {
     register!(StatusRegister::PowerstageTemp, f32, RW);
     register!(StatusRegister::IcTemp, f32, RW);
     register!(StatusRegister::ErrorStatus, f32, RW);
-    register!(StatusRegister::WarningStatus, f32, RW);
+    register!(StatusRegister::WarningStatus, u32, RW);
 }
