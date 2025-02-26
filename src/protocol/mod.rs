@@ -66,6 +66,11 @@ pub enum ConfigRegister {
     TempLimitHigh = 0x1C, // Motor will shutdown
 }
 
+impl ConfigRegister {
+    pub(crate) const READ_INST: u8 = Instruction::ReadCfg as u8;
+    pub(crate) const WRITE_INST: u8 = Instruction::WriteCfg as u8;
+}
+
 /// Status Registers
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[repr(u8)]
@@ -88,30 +93,7 @@ pub enum StatusRegister {
     WarningStatus = 0x0F,
 }
 
-/// Provides the corresponding instructions for writing to the Status or Config registers
-pub trait Address {
-    /// The corresponding write instruction
-    const WRITE_INST: Instruction;
-    /// The corresponding read instruction
-    const READ_INST: Instruction;
-
-    /// Returns the register address as u8
-    fn as_byte(&self) -> u8;
-}
-
-impl Address for StatusRegister {
-    const WRITE_INST: Instruction = Instruction::WriteStat;
-    const READ_INST: Instruction = Instruction::ReadStat;
-
-    fn as_byte(&self) -> u8 {
-        *self as u8
-    }
-}
-impl Address for ConfigRegister {
-    const WRITE_INST: Instruction = Instruction::WriteCfg;
-    const READ_INST: Instruction = Instruction::ReadCfg;
-
-    fn as_byte(&self) -> u8 {
-        *self as u8
-    }
+impl StatusRegister {
+    pub(crate) const READ_INST: u8 = Instruction::ReadStat as u8;
+    pub(crate) const WRITE_INST: u8 = Instruction::WriteStat as u8;
 }

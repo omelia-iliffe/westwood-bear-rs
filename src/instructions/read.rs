@@ -1,7 +1,7 @@
 use crate::bus::Bus;
 use crate::error::TransferError;
 use crate::protocol::Response;
-use crate::Address;
+use crate::{ConfigRegister, StatusRegister};
 
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
@@ -13,24 +13,34 @@ where
         motor_id: u8,
         instruction_id: u8,
         addr: u8,
-        length: u8,
     ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
-        self.write_packet(motor_id, instruction_id, 1, |buffer| {
+        self.transfer_single(motor_id, instruction_id, 1, 5, |buffer| {
             buffer[0] = addr;
             Ok(())
-        })?;
-        let r = self.read_response(length + 1)?;
-        Ok(r)
+        })
+    }
+
+    pub fn read_config(
+        &mut self,
+        motor_id: u8,
+        config_register: ConfigRegister,
+    ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
+        self.read_raw(motor_id, ConfigRegister::READ_INST, config_register as u8)
+    }
+
+    pub fn read_status(
+        &mut self,
+        motor_id: u8,
+        status_register: StatusRegister,
+    ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
+        self.read_raw(motor_id, StatusRegister::READ_INST, status_register as u8)
     }
 
     pub fn read<R: crate::Register>(
         &mut self,
         motor_id: u8,
     ) -> Result<Response<R::Inner>, TransferError<SerialPort::Error>> {
-        let r = self.transfer_single(motor_id, R::RegisterType::READ_INST as u8, 1, 5, |buffer| {
-            buffer[0] = R::ADDRESS.as_byte();
-            Ok(())
-        })?;
+        let r = self.read_raw(motor_id, R::READ_INST, R::ADDRESS)?;
         let r = Response {
             motor_id: r.motor_id,
             warning: r.warning,

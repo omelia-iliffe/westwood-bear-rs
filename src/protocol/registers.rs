@@ -1,21 +1,21 @@
 use crate::error::{BufferTooSmallError, InvalidMessage};
-use crate::protocol::{ConfigRegister, StatusRegister};
-use crate::Address;
 
 pub trait Register {
     const NAME: &'static str;
     /// The inner type that can be read or written to the register
     type Inner;
-    /// Either [`StatusRegister`] or [`ConfigRegister`]
-    type RegisterType: Address;
+    /// The instruction used for reading this register
+    const READ_INST: u8;
     /// The address that register data is read from or written to
-    const ADDRESS: Self::RegisterType;
+    const ADDRESS: u8;
 
     /// Decode the value from the given buffer.
     fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage>;
 }
 
 pub trait WritableRegister: Register {
+    /// The instruction used for writing to this register
+    const WRITE_INST: u8;
     /// The number of bytes of the register
     const ENCODED_SIZE: u8;
 
@@ -39,8 +39,8 @@ macro_rules! register {
         impl Register for $register {
             const NAME: &'static str = stringify!($register);
             type Inner = $inner;
-            type RegisterType = $r_type;
-            const ADDRESS: Self::RegisterType = $addr;
+            const ADDRESS: u8 = $addr as u8;
+            const READ_INST: u8 = <$r_type>::READ_INST;
 
             fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -64,6 +64,8 @@ macro_rules! register {
         register!(@REGISTER $register: $r_type, $addr, $inner);
         impl WritableRegister for $register {
             const ENCODED_SIZE: u8 = to_u8(core::mem::size_of::<Self::Inner>());
+
+            const WRITE_INST: u8 = <$r_type>::WRITE_INST;
 
             fn encode(data: Self::Inner, buffer: &mut [u8]) -> Result<(), BufferTooSmallError> {
                 const N: usize = core::mem::size_of::<$inner>();
@@ -103,6 +105,9 @@ macro_rules! register {
 
 pub mod config {
     use super::*;
+    use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
+    use crate::protocol::ConfigRegister;
+    use crate::Response;
     register!(ConfigRegister::Id, u32, RW);
     register!(ConfigRegister::Mode, u32, RW);
     register!(ConfigRegister::BaudRate, u32, RW);
@@ -136,6 +141,9 @@ pub mod config {
 
 pub mod status {
     use super::*;
+    use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
+    use crate::protocol::StatusRegister;
+    use crate::Response;
     register!(StatusRegister::TorqueEnable, u32, RW);
     register!(StatusRegister::HomingComplete, f32, RW);
     register!(StatusRegister::GoalId, f32, RW);
