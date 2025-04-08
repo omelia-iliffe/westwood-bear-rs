@@ -3,13 +3,18 @@ name = "ww-bear"
 version = "0.1.0"
 edition = "2021"
 
+[[example]]
+name = "set_position"
+path = "examples/set_position.rs"
+required-features = ["std"]
+
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
 log = "0.4.25"
-derive_more = { version = "2.0.1", features = ["from", "error", "display", "debug"] }
+derive_more = { version = "2.0.1", default-features = false, features = ["from", "error", "display", "debug"] }
 bitflags = "2.8.0"
 paste = "1.0.15"
-strum = { version = "0.27.0", features = ["derive"] }
+strum = { version = "0.27.0", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 test-log = "0.2.17"

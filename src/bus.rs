@@ -97,7 +97,7 @@ where
     }
 }
 #[cfg(feature = "alloc")]
-impl<SerialPort> Bus<SerialPort, Vec<u8>>
+impl<SerialPort> Bus<SerialPort, alloc::vec::Vec<u8>>
 where
     SerialPort: crate::SerialPort,
 {
@@ -110,7 +110,7 @@ where
     /// Use [`Self::with_buffers()`] if you want to use a custom buffers.
     #[cfg(feature = "alloc")]
     pub fn new(serial_port: SerialPort) -> Result<Self, SerialPort::Error> {
-        Bus::with_buffers(serial_port, vec![0; 128], vec![0; 128])
+        Bus::with_buffers(serial_port, alloc::vec![0; 128], alloc::vec![0; 128])
     }
 }
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
