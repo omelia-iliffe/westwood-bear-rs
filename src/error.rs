@@ -1,3 +1,5 @@
+//! The error types from communcication errors and motor error states
+
 use crate::protocol::ERROR_FLAGS;
 use crate::ErrorFlags;
 use core::fmt::{Display, Formatter, Result as FmtResult};

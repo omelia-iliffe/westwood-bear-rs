@@ -20,6 +20,7 @@ where
         })
     }
 
+    /// Read a [`ConfigRegister`] from a specific motor
     pub fn read_config(
         &mut self,
         motor_id: u8,
@@ -28,6 +29,7 @@ where
         self.read_raw(motor_id, ConfigRegister::READ_INST, config_register as u8)
     }
 
+    /// Read a [`StatusRegister`] from a specific motor
     pub fn read_status(
         &mut self,
         motor_id: u8,
@@ -36,6 +38,10 @@ where
         self.read_raw(motor_id, StatusRegister::READ_INST, status_register as u8)
     }
 
+    /// Read a register from a specific motor.
+    ///
+    /// The register is specificed as a generic parameter, ie `Bus::read<status::PresentPos>`,
+    /// and are avaliable in the [`crate::protocol::registers::config`] and [`crate::protocol::registers::status`] modules.
     pub fn read<R: crate::Register>(
         &mut self,
         motor_id: u8,

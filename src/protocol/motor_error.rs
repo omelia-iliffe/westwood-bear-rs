@@ -2,6 +2,7 @@ use bitflags::bitflags;
 use core::fmt::{Display, Formatter};
 
 bitflags! {
+    /// The error byte returned with each response from a motor.
     #[derive(Debug, Clone, Copy, Eq, PartialEq)]
     pub struct ErrorFlags: u8 {
         /// A corrupted data packet was received. This warning resets automatically
@@ -28,7 +29,10 @@ bitflags! {
     }
 }
 
+/// [`ErrorFlags::OVERHEAT`] and [`ErrorFlags::COMMUNICATION`] are warnings flags that automatically reset when the error conditions are no longer met.
 pub const WARNING_FLAGS: ErrorFlags = ErrorFlags::OVERHEAT.union(ErrorFlags::COMMUNICATION);
+
+/// The [`ErrorFlags`] that represent critical errors for which action must be taken.
 pub const ERROR_FLAGS: ErrorFlags = WARNING_FLAGS.complement();
 
 impl Display for ErrorFlags {

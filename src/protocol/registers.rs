@@ -1,6 +1,14 @@
+//! The Bear protocol uses register to read and write data to the motors
+//! Config regsiters can only be written to when the motors torque is disable. Config registers persist on reboot and can be updated (using [`crate::Bus::save_config`]).
+//!
+//! Status registers are not persistant and writable registers can be updated when torque is enabled.
+//!
+//! This module also contains [`Register`] and [`WritableRegister`] traits used for working with registers generically.
 use crate::error::{BufferTooSmallError, InvalidMessage};
 
+/// Implemented by each register, this trait is used with [`crate::Bus::read`].
 pub trait Register {
+    /// The register name, useful for debugging but currently unused.
     const NAME: &'static str;
     /// The inner type that can be read or written to the register
     type Inner;
@@ -13,6 +21,7 @@ pub trait Register {
     fn decode(buffer: &[u8]) -> Result<Self::Inner, InvalidMessage>;
 }
 
+/// Implemented by all writeable registers, this trait is used with [`crate::Bus::write`].
 pub trait WritableRegister: Register {
     /// The instruction used for writing to this register
     const WRITE_INST: u8;
@@ -53,6 +62,7 @@ macro_rules! register {
             where SerialPort: crate::SerialPort,
                     Buffer: AsMut<[u8]> + AsRef<[u8]> {
             paste::item!{
+                #[doc = "read the `" $register "` from a specific motor."]
                 pub fn [<read_ $register:snake>](&mut self, id: u8) -> Result<Response<$inner>, TransferError<SerialPort::Error>> {
                     self.read::<$register>(id)
                 }
@@ -82,6 +92,7 @@ macro_rules! register {
             where SerialPort: crate::SerialPort,
                     Buffer: AsMut<[u8]> + AsRef<[u8]> {
             paste::item!{
+                #[doc = "write a `" $inner "` to the `" $register "` of a specific motor."]
                 pub fn [<write_ $register:snake>](&mut self, id: u8, data: $inner) -> Result<(), WriteError<SerialPort::Error>> {
                     self.write::<$register>(id, data)
                 }
@@ -103,6 +114,8 @@ macro_rules! register {
 
 }
 
+/// Structs representing each config register.
+/// Use with [`crate::Bus::read`] and [`crate::Bus::write`]
 pub mod config {
     use super::*;
     use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
@@ -139,6 +152,8 @@ pub mod config {
     register!(ConfigRegister::TempLimitHigh, f32, RW);
 }
 
+/// Structs representing each status register.
+/// Use with [`crate::Bus::read`] and [`crate::Bus::write`]
 pub mod status {
     use super::*;
     use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};

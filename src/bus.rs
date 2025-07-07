@@ -26,6 +26,15 @@ const HEADER_SIZE: usize = 4;
 
 macro_rules! make_client_struct {
     ($($DefaultSerialPort:ty)?) => {
+        /// Bus for Westwood Robotics Bear Actuators.
+        ///
+        /// Used to communicate with devices on the serial bus.
+        ///
+		/// If the `"serial2"` feature is enabled, the `SerialPort` generic type argument defaults to [`serial2::SerialPort`].
+		/// If it is not enabled, the `SerialPort` argument must always be specified.
+		///
+		/// The `Buffer` generic type argument defaults to `Vec<u8>` if the `"alloc"` feature is enabled,
+		/// and to `&'static mut [u8]` otherwise.
         pub struct Bus<SerialPort $(= $DefaultSerialPort)?, Buffer = DefaultBuffer>
         where
             SerialPort: crate::SerialPort,
