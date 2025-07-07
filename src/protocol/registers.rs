@@ -97,7 +97,7 @@ macro_rules! register {
     (ConfigRegister::$register:ident, $inner:ty, RO) => {
         register!(@REGISTER $register: ConfigRegister, ConfigRegister::$register, $inner);
     };
-    (StatusRegister::$register:ident, $inner:ty, R0) => {
+    (StatusRegister::$register:ident, $inner:ty, RO) => {
         register!(@REGISTER $register: StatusRegister, StatusRegister::$register, $inner);
     };
 
@@ -150,14 +150,14 @@ pub mod status {
     register!(StatusRegister::GoalIq, f32, RW);
     register!(StatusRegister::GoalVel, f32, RW);
     register!(StatusRegister::GoalPos, f32, RW);
-    register!(StatusRegister::PresentId, f32, RW);
-    register!(StatusRegister::PresentIq, f32, RW);
-    register!(StatusRegister::PresentVel, f32, RW);
-    register!(StatusRegister::PresentPos, f32, RW);
-    register!(StatusRegister::InputVoltage, f32, RW);
-    register!(StatusRegister::WindingTemp, f32, RW);
-    register!(StatusRegister::PowerstageTemp, f32, RW);
-    register!(StatusRegister::IcTemp, f32, RW);
-    register!(StatusRegister::ErrorStatus, f32, RW);
-    register!(StatusRegister::WarningStatus, u32, RW);
+    register!(StatusRegister::PresentId, f32, RO);
+    register!(StatusRegister::PresentIq, f32, RO);
+    register!(StatusRegister::PresentVel, f32, RO);
+    register!(StatusRegister::PresentPos, f32, RO);
+    register!(StatusRegister::InputVoltage, f32, RO);
+    register!(StatusRegister::WindingTemp, f32, RO);
+    register!(StatusRegister::PowerstageTemp, f32, RO);
+    register!(StatusRegister::IcTemp, f32, RO);
+    register!(StatusRegister::ErrorStatus, f32, RO);
+    register!(StatusRegister::WarningStatus, u32, RO);
 }
