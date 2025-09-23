@@ -37,7 +37,7 @@ macro_rules! make_client_struct {
 		/// and to `&'static mut [u8]` otherwise.
         pub struct Bus<SerialPort $(= $DefaultSerialPort)?, Buffer = DefaultBuffer>
         where
-            SerialPort: crate::SerialPort,
+            SerialPort: super::SerialPort,
             Buffer: AsRef<[u8]> + AsMut<[u8]>,
         {
             /// The underlying stream (normally a serial port).
@@ -59,14 +59,14 @@ macro_rules! make_client_struct {
 }
 
 #[cfg(feature = "serial2")]
-make_client_struct!(serial2::SerialPort);
+make_client_struct!(Serial2Port);
 
 #[cfg(not(feature = "serial2"))]
 make_client_struct!();
 
 impl<SerialPort, Buffer> core::fmt::Debug for Bus<SerialPort, Buffer>
 where
-    SerialPort: crate::SerialPort + core::fmt::Debug,
+    SerialPort: super::SerialPort + core::fmt::Debug,
     Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -77,19 +77,21 @@ where
     }
 }
 #[cfg(feature = "serial2")]
-impl Bus<serial2::SerialPort, Vec<u8>> {
+use super::Serial2Port;
+#[cfg(feature = "serial2")]
+impl Bus<Serial2Port, Vec<u8>> {
     /// Open a serial port with the given baud rate.
     ///
     /// This will allocate a new read and write buffer of 128 bytes each.
     /// Use [`Self::open_with_buffers()`] if you want to use a custom buffers.
     pub fn open(path: impl AsRef<std::path::Path>, baud_rate: u32) -> std::io::Result<Self> {
-        let serial_port = serial2::SerialPort::open(path, baud_rate)?;
+        let serial_port = Serial2Port::open(path, baud_rate)?;
         let bus = Bus::with_buffers_and_baud_rate(serial_port, vec![0; 128], vec![0; 128], baud_rate);
         Ok(bus)
     }
 }
 #[cfg(feature = "serial2")]
-impl<Buffer> Bus<serial2::SerialPort, Buffer>
+impl<Buffer> Bus<Serial2Port, Buffer>
 where
     Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -102,7 +104,7 @@ where
         read_buffer: Buffer,
         write_buffer: Buffer,
     ) -> std::io::Result<Self> {
-        let serial_port = serial2::SerialPort::open(path, baud_rate)?;
+        let serial_port = Serial2Port::open(path, baud_rate)?;
         let bus = Bus::with_buffers_and_baud_rate(serial_port, read_buffer, write_buffer, baud_rate);
         Ok(bus)
     }
@@ -110,7 +112,7 @@ where
 #[cfg(feature = "alloc")]
 impl<SerialPort> Bus<SerialPort, alloc::vec::Vec<u8>>
 where
-    SerialPort: crate::SerialPort,
+    SerialPort: super::SerialPort,
 {
     /// Create a new client using an open serial port.
     ///
@@ -124,9 +126,10 @@ where
         Bus::with_buffers(serial_port, alloc::vec![0; 128], alloc::vec![0; 128])
     }
 }
+#[super::bisync]
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
-    SerialPort: crate::SerialPort,
+    SerialPort: super::SerialPort,
     Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Create a new bus using pre-allocated buffers.
@@ -198,7 +201,7 @@ where
     ///
     /// This function also checks that the packet ID of the status response matches the one from the instruction.
     /// and that the error byte does not contain any [`crate::ERROR_FLAGS`]. [`crate::WARNING_FLAGS`] are allowed.
-    pub(crate) fn transfer_single<F>(
+    pub(crate) async fn transfer_single<F>(
         &mut self,
         packet_id: u8,
         instruction_id: u8,
@@ -209,8 +212,9 @@ where
     where
         F: FnOnce(&mut [u8]) -> Result<(), crate::error::BufferTooSmallError>,
     {
-        self.write_packet(packet_id, instruction_id, parameter_count, encode_parameters)?;
-        let response = self.read_response(expected_response_parameters)?;
+        self.write_packet(packet_id, instruction_id, parameter_count, encode_parameters)
+            .await?;
+        let response = self.read_response(expected_response_parameters).await?;
         crate::error::InvalidPacketId::check(response.motor_id, packet_id)?;
         MotorError::check(response.warning)?;
         Ok(response)
@@ -245,7 +249,7 @@ where
 
         Ok(checksum_index + 1)
     }
-    pub(crate) fn write_packet<F>(
+    pub(crate) async fn write_packet<F>(
         &mut self,
         packet_id: u8,
         instruction_id: u8,
@@ -272,22 +276,25 @@ where
             .discard_input_buffer()
             .map_err(WriteError::DiscardBuffer)?;
         trace!("sending packet: {:02X?}", packet);
-        self.serial_port.write_all(packet).map_err(WriteError::Write)?;
+        self.serial_port.write_all(packet).await.map_err(WriteError::Write)?;
         Ok(())
         // self.write_packet_raw(&self.write_buffer.as_ref()[..packet_len])
     }
 
-    pub(crate) fn read_response(
+    pub(crate) async fn read_response(
         &mut self,
         expected_parameters: u8,
     ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
         let timeout = message_transfer_time(expected_parameters as u32, self.baud_rate) + self.return_time_delay;
-        self.read_response_timeout(timeout)
+        self.read_response_timeout(timeout).await
     }
 
-    fn read_response_timeout(&mut self, timeout: Duration) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
+    async fn read_response_timeout(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
         let deadline = self.serial_port.make_deadline(timeout);
-        let packet = self.read_packet_deadline(deadline)?;
+        let packet = self.read_packet_deadline(deadline).await?;
         let response = Response {
             motor_id: packet[PACKET_ID],
             warning: ErrorFlags::from_bits(packet[PACKET_ERROR]),
@@ -297,7 +304,10 @@ where
     }
 
     /// returns a packet including header + parameters
-    fn read_packet_deadline(&mut self, deadline: SerialPort::Instant) -> Result<&[u8], ReadError<SerialPort::Error>> {
+    async fn read_packet_deadline(
+        &mut self,
+        deadline: SerialPort::Instant,
+    ) -> Result<&[u8], ReadError<SerialPort::Error>> {
         // Check that the read buffer is large enough to hold atleast a instruction packet with 0 parameters.
         crate::error::BufferTooSmallError::check(HEADER_SIZE + 2, self.read_buffer.as_mut().len())?; //todo check size is correct
 
@@ -323,6 +333,7 @@ where
             let new_data = self
                 .serial_port
                 .read(&mut self.read_buffer.as_mut()[self.read_len..], &deadline)
+                .await
                 .map_err(ReadError::Io)?;
             if new_data == 0 {
                 continue;

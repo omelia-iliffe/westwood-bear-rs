@@ -10,19 +10,25 @@ required-features = ["std"]
 
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
+serial2-tokio = {version = "0.1.19", optional = true }
 log = "0.4.25"
 derive_more = { version = "2", default-features = false, features = ["from", "error", "display", "debug"] }
 bitflags = "1"
 paste = "1"
 strum = { version = "0.27.0", default-features = false, features = ["derive"] }
 defmt = { version = "1", optional = true }
+bisync = "0.3.0"
+tokio = { version = "1.47.1", features = ["time"], optional = true}
 
 [dev-dependencies]
 test-log = "0.2.17"
 env_logger = "0.11.6"
+tokio = { version = "1.47.1", features = ["rt", "io-std", "io-util", "macros", "time"] }
 
 [features]
 default = ["std", "serial2"]
 alloc = ["defmt?/alloc"]
 std = ["alloc"]
 defmt = ["dep:defmt"]
+async = []
+serial2 = ["dep:serial2", "serial2-tokio", "tokio"]
