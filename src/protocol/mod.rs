@@ -16,6 +16,7 @@ pub(crate) const PACKET_ERROR: usize = 4;
 /// The Instructions supported by the Bear Protocol.
 /// Currently BulkComm is unsupported by this crate.
 #[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum Instruction {
@@ -30,6 +31,7 @@ pub enum Instruction {
 
 /// Registers used to set motor configuration
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum ConfigRegister {
     /// ID register, u32, read and write
@@ -100,6 +102,7 @@ impl ConfigRegister {
 
 /// Status Registers
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
 pub enum StatusRegister {
     /// TORQUE ENABLE register, f32, read and write

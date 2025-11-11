@@ -11,10 +11,11 @@ required-features = ["std"]
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
 log = "0.4.25"
-derive_more = { version = "2.0.1", default-features = false, features = ["from", "error", "display", "debug"] }
-bitflags = "2.8.0"
-paste = "1.0.15"
+derive_more = { version = "2", default-features = false, features = ["from", "error", "display", "debug"] }
+bitflags = "1"
+paste = "1"
 strum = { version = "0.27.0", default-features = false, features = ["derive"] }
+defmt = { version = "1", optional = true }
 
 [dev-dependencies]
 test-log = "0.2.17"
@@ -22,5 +23,6 @@ env_logger = "0.11.6"
 
 [features]
 default = ["std", "serial2"]
-alloc = []
+alloc = ["defmt?/alloc"]
 std = ["alloc"]
+defmt = ["dep:defmt"]

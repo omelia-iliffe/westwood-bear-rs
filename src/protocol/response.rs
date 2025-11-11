@@ -5,6 +5,7 @@ use crate::protocol::motor_error::ErrorFlags;
 /// Note that the `Eq` and `PartialEq` compare all fields of the struct,
 /// including the `motor_id` and `alert`.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Response<T> {
     /// The motor that sent the response.
     pub motor_id: u8,

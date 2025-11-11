@@ -1,12 +1,13 @@
 //! The error types from communcication errors and motor error states
 
-use crate::protocol::ERROR_FLAGS;
 use crate::ErrorFlags;
+use crate::protocol::ERROR_FLAGS;
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use derive_more::{Display, Error, From};
 
 /// An error that can occur during a read/write transfer.
 #[derive(Debug, Display, Error, From)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum TransferError<E> {
     /// The write of failed.
     #[from]
@@ -19,6 +20,7 @@ pub enum TransferError<E> {
 
 /// An error that can occur during a write transfer.
 #[derive(Debug, Display, Error, From)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum WriteError<E> {
     /// The write buffer is too small to contain the whole stuffed message.
     BufferTooSmall(BufferTooSmallError),
@@ -37,6 +39,7 @@ pub enum WriteError<E> {
 /// Consider increasing the size of the buffer.
 /// Keep in mind that the write buffer needs to be large enough to account for byte stuffing.
 #[derive(Debug, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[display("buffer is too small: need {} bytes, but the size is {}", self.required_size, self.total_size)]
 pub struct BufferTooSmallError {
     /// The required size of the buffer.
@@ -48,6 +51,7 @@ pub struct BufferTooSmallError {
 
 /// An error that can occur during a read transfer.
 #[derive(Debug, Display, Error, From)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ReadError<E> {
     /// The read buffer is too small to contain the whole stuffed message.
     #[from]
@@ -73,6 +77,7 @@ pub enum ReadError<E> {
 
 /// The received message is not valid.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error, From)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum InvalidMessage {
     /// The message checksum is invalid.
     InvalidChecksum(InvalidChecksum),
@@ -86,6 +91,7 @@ pub enum InvalidMessage {
 
 /// An error reported by the motor.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct MotorError {
     /// The raw error as returned by the motor.
     pub flags: ErrorFlags,
@@ -93,6 +99,7 @@ pub struct MotorError {
 
 /// The received message has an invalid checksum value.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[display("invalid checksum, message claims {:#02X}, computed {:#02X}", self.message, self.computed)]
 pub struct InvalidChecksum {
     /// The checksum from the messsage.
@@ -104,6 +111,7 @@ pub struct InvalidChecksum {
 
 /// The received message has an invalid or unexpected packet ID.
 #[derive(Debug, Clone, Eq, PartialEq, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InvalidPacketId {
     /// The actual packet ID.
     pub actual: u8,
@@ -127,6 +135,7 @@ impl Display for InvalidPacketId {
 
 /// The expected number of parameters.
 #[derive(Debug, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ExpectedCount {
     /// The exact number of expected parameters.
     Exact(usize),
@@ -151,6 +160,7 @@ impl Display for ExpectedCount {
 }
 /// The received message has an invalid or unexpected parameter count.
 #[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[display("invalid parameter count, expected {}, got {}", self.expected, self.actual)]
 pub struct InvalidParameterCount {
     /// The actual parameter count.

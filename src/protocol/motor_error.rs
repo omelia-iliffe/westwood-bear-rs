@@ -1,9 +1,11 @@
+#[cfg(not(feature = "defmt"))]
 use bitflags::bitflags;
 use core::fmt::{Display, Formatter};
+#[cfg(feature = "defmt")]
+use defmt::bitflags;
 
 bitflags! {
     /// The error byte returned with each response from a motor.
-    #[derive(Debug, Clone, Copy, Eq, PartialEq)]
     pub struct ErrorFlags: u8 {
         /// A corrupted data packet was received. This warning resets automatically
         /// and is only associated with corresponding round of communication
@@ -37,7 +39,7 @@ pub const ERROR_FLAGS: ErrorFlags = WARNING_FLAGS.complement();
 
 impl Display for ErrorFlags {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        bitflags::parser::to_writer(self, f)
+        core::fmt::Debug::fmt(&self, f)
     }
 }
 

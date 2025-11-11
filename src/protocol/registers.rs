@@ -41,6 +41,7 @@ const fn to_u8(input: usize) -> u8 {
 macro_rules! register {
     (@REGISTER $register:ident : $r_type:ty, $addr:expr, $inner:ty) => {
         #[derive(Debug, Clone, PartialEq)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
         #[doc = concat!("[`",stringify!($register),"`] register at address `",stringify!($addr), "`")]
         #[doc = concat!("[`",stringify!($register),"`] is of type [`", stringify!($inner), "`]")]
         pub struct $register;
@@ -118,9 +119,9 @@ macro_rules! register {
 /// Use with [`crate::Bus::read`] and [`crate::Bus::write`]
 pub mod config {
     use super::*;
+    use crate::Response;
     use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
     use crate::protocol::ConfigRegister;
-    use crate::Response;
     register!(ConfigRegister::Id, u32, RW);
     register!(ConfigRegister::Mode, u32, RW);
     register!(ConfigRegister::BaudRate, u32, RW);
@@ -156,9 +157,9 @@ pub mod config {
 /// Use with [`crate::Bus::read`] and [`crate::Bus::write`]
 pub mod status {
     use super::*;
+    use crate::Response;
     use crate::error::{BufferTooSmallError, InvalidMessage, TransferError, WriteError};
     use crate::protocol::StatusRegister;
-    use crate::Response;
     register!(StatusRegister::TorqueEnable, u32, RW);
     register!(StatusRegister::HomingComplete, f32, RW);
     register!(StatusRegister::GoalId, f32, RW);
