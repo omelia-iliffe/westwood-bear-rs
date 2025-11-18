@@ -1,6 +1,6 @@
 use crate::error::{BufferTooSmallError, MotorError, ReadError, TransferError, WriteError};
-use crate::protocol::{Response, PACKET_ERROR, PACKET_ID, PACKET_LEN};
-use crate::{checksum, ErrorFlags};
+use crate::protocol::{PACKET_ERROR, PACKET_ID, PACKET_LEN, Response};
+use crate::{ErrorFlags, checksum};
 use core::time::Duration;
 use log::{debug, trace};
 
@@ -52,6 +52,8 @@ macro_rules! make_client_struct {
             pub(crate) used_bytes: usize,
             /// The buffer for outgoing messages.
             pub(crate) write_buffer: Buffer,
+            /// Additional return time delay, added on to message timeout calculations
+            pub(crate) return_time_delay: Duration,
         }
     };
 }
@@ -166,6 +168,7 @@ where
             read_len: 0,
             used_bytes: 0,
             write_buffer,
+            return_time_delay: Duration::from_millis(1),
         }
     }
 
@@ -174,6 +177,21 @@ where
         self.serial_port.set_baud_rate(baud_rate)?;
         self.baud_rate = baud_rate;
         Ok(())
+    }
+
+    /// Get a mutable reference to the SerialPort
+    pub fn serial_port(&mut self) -> &mut SerialPort {
+        &mut self.serial_port
+    }
+
+    /// Get the additional return time delay, this delay is added on to the message timeout calculations.
+    pub fn return_time_delay(&self) -> Duration {
+        self.return_time_delay
+    }
+
+    /// Set the additional return time delay, this delay is added on to the message timeout calculations.
+    pub fn set_return_time_delay(&mut self, delay: Duration) {
+        self.return_time_delay = delay;
     }
 
     /// Write a raw instruction to a stream, and read a single raw response.
@@ -263,7 +281,7 @@ where
         &mut self,
         expected_parameters: u8,
     ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
-        let timeout = message_transfer_time(expected_parameters as u32, self.baud_rate) + Duration::from_millis(1);
+        let timeout = message_transfer_time(expected_parameters as u32, self.baud_rate) + self.return_time_delay;
         self.read_response_timeout(timeout)
     }
 
