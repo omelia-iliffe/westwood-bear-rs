@@ -151,6 +151,7 @@ pub mod config {
     register!(ConfigRegister::WatchdogTimeout, u32, RW);
     register!(ConfigRegister::TempLimitLow, f32, RW);
     register!(ConfigRegister::TempLimitHigh, f32, RW);
+    register!(ConfigRegister::ReturnTimeDelay, u32, RW);
 }
 
 /// Structs representing each status register.

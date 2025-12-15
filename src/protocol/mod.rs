@@ -93,6 +93,9 @@ pub enum ConfigRegister {
     TempLimitLow = 0x1B, // Motor will start to limit power
     /// TEMP LIMIT HIGH register, f32, read and write
     TempLimitHigh = 0x1C, // Motor will shutdown
+
+    /// RETURN TIME DELAY register, u32, read and write
+    ReturnTimeDelay = 0x1E,
 }
 
 impl ConfigRegister {
