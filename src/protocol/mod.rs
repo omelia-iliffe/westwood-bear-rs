@@ -26,6 +26,7 @@ pub enum Instruction {
     ReadCfg = 0x04,
     WriteCfg = 0x05,
     SaveCfg = 0x06,
+    SetAbsPos = 0x08,
     BulkComm = 0x12,
 }
 
