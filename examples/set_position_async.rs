@@ -1,7 +1,6 @@
 use clap::Parser;
-use std::thread;
-use std::time::Duration;
-use ww_bear::Bus;
+use tokio::time::{Duration, sleep};
+use ww_bear::asynchronous::Bus;
 
 #[derive(Parser)]
 struct Args {
@@ -17,22 +16,23 @@ struct Args {
     baud: u32,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let args = Args::parse();
     let mut bus = Bus::open(&args.port, args.baud)?;
 
-    bus.ping(args.id)?;
+    bus.ping(args.id).await?;
     println!("Connected to motor {}", args.id);
 
-    bus.write_mode(args.id, 2)?;
-    bus.write_torque_enable(args.id, 1)?;
-    bus.write_goal_pos(args.id, args.position)?;
+    bus.write_mode(args.id, 2).await?;
+    bus.write_torque_enable(args.id, 1).await?;
+    bus.write_goal_pos(args.id, args.position).await?;
     println!("Goal position set to {:.4} rad", args.position);
 
-    thread::sleep(Duration::from_secs(2));
+    sleep(Duration::from_secs(2)).await;
 
-    let present = bus.read_present_pos(args.id)?.data;
+    let present = bus.read_present_pos(args.id).await?.data;
     println!("Present position:   {present:.4} rad");
 
     Ok(())

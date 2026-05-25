@@ -1,7 +1,5 @@
 //! The error types from communcication errors and motor error states
 
-use crate::ErrorFlags;
-use crate::protocol::ERROR_FLAGS;
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use derive_more::{Display, Error, From};
 
@@ -14,7 +12,7 @@ pub enum TransferError<E> {
     WriteError(WriteError<E>),
 
     /// The read failed.
-    #[from(ReadError<E>, InvalidMessage, InvalidPacketId, MotorError)]
+    #[from(ReadError<E>, InvalidMessage, InvalidPacketId)]
     ReadError(ReadError<E>),
 }
 
@@ -64,15 +62,6 @@ pub enum ReadError<E> {
     /// The received message is invalid.
     #[from(InvalidMessage, InvalidChecksum, InvalidPacketId)]
     InvalidMessage(InvalidMessage),
-
-    /// The motor reported an error instead of a valid response.
-    ///
-    /// This error is not returned when a motor signals a hardware error,
-    /// since the instruction has still been exectuted.
-    ///
-    /// Instead, the `alert` bit in the response will be set.
-    #[from]
-    MotorError(MotorError),
 }
 
 /// The received message is not valid.
@@ -87,14 +76,6 @@ pub enum InvalidMessage {
 
     /// The message has an invalid parameter count.
     InvalidParameterCount(InvalidParameterCount),
-}
-
-/// An error reported by the motor.
-#[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
-#[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct MotorError {
-    /// The raw error as returned by the motor.
-    pub flags: ErrorFlags,
 }
 
 /// The received message has an invalid checksum value.
@@ -180,24 +161,6 @@ impl BufferTooSmallError {
                 required_size,
                 total_size,
             })
-        }
-    }
-}
-
-impl MotorError {
-    /// Check for a motor error in the response.
-    ///
-    /// This ignores the `alert` bit,
-    /// since it indicates a hardware error and not a failed instruction.
-    pub fn check(flags: Option<ErrorFlags>) -> Result<(), Self> {
-        // Ignore the alert bit for this check.
-        // If the alert bit is set, the motor encountered an error, but the instruction was still executed.
-        let Some(flags) = flags else { return Ok(()) };
-
-        if flags.intersects(ERROR_FLAGS) {
-            Err(Self { flags })
-        } else {
-            Ok(())
         }
     }
 }

@@ -8,20 +8,43 @@
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![cfg_attr(not(feature = "std"), no_std)]
+#![allow(clippy::duplicate_mod)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod protocol;
+pub use protocol::*;
+pub mod error;
+
+mod checksum;
+
+/// Asynchronous interface for bear motors
+#[path = "."]
+pub mod asynchronous {
+    use bisync::asynchronous::*;
+    mod bus;
+    pub use bus::Bus;
+    mod instructions;
+    mod serial_port;
+    pub use serial_port::SerialPort;
+    #[cfg(feature = "serial2")]
+    /// Public re-export of the serial2 crate.
+    pub use serial2_tokio;
+    #[cfg(feature = "serial2")]
+    use serial2_tokio::SerialPort as Serial2Port;
+}
+
+// Synchronous interface exports
+use bisync::synchronous::*;
+mod bus;
+pub use bus::Bus;
+mod instructions;
+mod serial_port;
+pub use serial_port::SerialPort;
+
 #[cfg(feature = "serial2")]
 /// Public re-export of the serial2 crate.
 pub use serial2;
-mod bus;
-pub use bus::Bus;
-mod checksum;
-pub mod error;
-mod instructions;
-mod protocol;
-pub use protocol::*;
-mod serial_port;
-
-pub use serial_port::SerialPort;
+#[cfg(feature = "serial2")]
+use serial2::SerialPort as Serial2Port;

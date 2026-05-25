@@ -13,19 +13,29 @@ pub(crate) const PACKET_ID: usize = 2;
 pub(crate) const PACKET_LEN: usize = 3;
 pub(crate) const PACKET_ERROR: usize = 4;
 
-/// The Instructions supported by the Bear Protocol.
-/// Currently BulkComm is unsupported by this crate.
+/// The instructions supported by the BEAR protocol.
+///
+/// Note: `BulkComm` is not yet supported by this crate.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
-#[allow(missing_docs)]
+#[non_exhaustive]
 pub enum Instruction {
+    /// Ping a motor to check if it is present on the bus.
     Ping = 0x01,
+    /// Read a status register.
     ReadStat = 0x02,
+    /// Write a status register.
     WriteStat = 0x03,
+    /// Read a config register.
     ReadCfg = 0x04,
+    /// Write a config register.
     WriteCfg = 0x05,
+    /// Save config registers to flash so they persist across reboots.
     SaveCfg = 0x06,
+    /// Set the absolute position of a motor with a backup battery.
+    SetAbsPos = 0x08,
+    /// Bulk read/write multiple motors in a single packet. Not yet supported.
     BulkComm = 0x12,
 }
 
@@ -33,6 +43,7 @@ pub enum Instruction {
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum ConfigRegister {
     /// ID register, u32, read and write
     Id = 0x00,
@@ -107,6 +118,7 @@ impl ConfigRegister {
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum StatusRegister {
     /// TORQUE ENABLE register, f32, read and write
     TorqueEnable = 0x00, // Enable output

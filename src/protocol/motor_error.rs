@@ -45,12 +45,10 @@ impl Display for ErrorFlags {
 
 #[cfg(test)]
 mod tests {
-    use crate::protocol::motor_error::ErrorFlags;
+    use super::*;
 
     #[test]
-    fn error_flags() {
-        let value = 128_u8;
-        let flag = ErrorFlags::from_bits(value);
-        assert!(flag.is_none())
+    fn zero_is_valid() {
+        assert_eq!(ErrorFlags::from_bits_truncate(0x80), ErrorFlags::empty());
     }
 }
