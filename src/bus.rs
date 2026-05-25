@@ -1,4 +1,4 @@
-use crate::error::{BufferTooSmallError, MotorError, ReadError, TransferError, WriteError};
+use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
 use crate::protocol::{PACKET_ERROR, PACKET_ID, PACKET_LEN, Response};
 use crate::{ErrorFlags, checksum};
 use core::time::Duration;
@@ -216,7 +216,6 @@ where
             .await?;
         let response = self.read_response(expected_response_parameters).await?;
         crate::error::InvalidPacketId::check(response.motor_id, packet_id)?;
-        MotorError::check(response.warning)?;
         Ok(response)
     }
     /// Write a packet to the bus.
@@ -297,7 +296,7 @@ where
         let packet = self.read_packet_deadline(deadline).await?;
         let response = Response {
             motor_id: packet[PACKET_ID],
-            warning: ErrorFlags::from_bits(packet[PACKET_ERROR]),
+            warning: ErrorFlags::from_bits_truncate(dbg!(packet[PACKET_ERROR])),
             data: &packet[5..],
         };
         Ok(response)

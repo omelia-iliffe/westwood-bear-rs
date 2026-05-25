@@ -11,7 +11,7 @@ pub struct Response<T> {
     pub motor_id: u8,
 
     /// The motor returns an [`ErrorFlags`] byte with every response. If the flag contains any errors an Err is returned, or any warnings this field is Some(_)
-    pub warning: Option<ErrorFlags>,
+    pub warning: ErrorFlags,
 
     /// The data from the motor.
     pub data: T,
