@@ -8,6 +8,26 @@ name = "set_position"
 path = "examples/set_position.rs"
 required-features = ["std"]
 
+[[example]]
+name = "set_position_async"
+path = "examples/set_position_async.rs"
+required-features = ["std"]
+
+[[example]]
+name = "set_abs_position"
+path = "examples/set_abs_position.rs"
+required-features = ["std"]
+
+[[example]]
+name = "ping"
+path = "examples/ping.rs"
+required-features = ["std"]
+
+[[example]]
+name = "setup_motor"
+path = "examples/setup_motor.rs"
+required-features = ["std"]
+
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
 serial2-tokio = {version = "0.1.19", optional = true }
@@ -24,6 +44,7 @@ tokio = { version = "1.47.1", features = ["time"], optional = true}
 test-log = "0.2.17"
 env_logger = "0.11.6"
 tokio = { version = "1.47.1", features = ["rt", "io-std", "io-util", "macros", "time"] }
+clap = { version = "4.6.1", features = ["derive"] }
 
 [features]
 default = ["std", "serial2"]

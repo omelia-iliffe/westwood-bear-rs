@@ -1,55 +1,39 @@
-use std::thread;
-use std::time::Duration;
+use clap::Parser;
+use tokio::time::{Duration, sleep};
 use ww_bear::asynchronous::Bus;
 
-const ID: u8 = 1;
-use ww_bear::registers::{config, status};
+#[derive(Parser)]
+struct Args {
+    /// Serial port (e.g. /dev/ttyUSB0)
+    port: String,
+    /// Motor ID
+    #[arg(short, long)]
+    id: u8,
+    /// Goal position in radians
+    position: f32,
+    /// Baud rate
+    #[arg(short, long, default_value_t = 8_000_000)]
+    baud: u32,
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    let mut bear = Bus::open("/dev/ttyUSB0", 8_000_000)?;
+    let args = Args::parse();
+    let mut bus = Bus::open(&args.port, args.baud)?;
 
-    match bear.ping(ID).await {
-        Ok(_) => {
-            log::info!("ping id {ID} success")
-        },
-        Err(e) => {
-            log::info!("failed to ping {ID}");
-            Err(e)?;
-        },
-    };
+    bus.ping(args.id).await?;
+    println!("Connected to motor {}", args.id);
 
-    bear.write::<config::PGainIq>(ID, 0.02).await?;
-    bear.write::<config::IGainIq>(ID, 0.02).await?;
-    bear.write::<config::DGainIq>(ID, 0.0).await?;
+    bus.write_mode(args.id, 2).await?;
+    bus.write_torque_enable(args.id, 1).await?;
+    bus.write_goal_pos(args.id, args.position).await?;
+    println!("Goal position set to {:.4} rad", args.position);
 
-    bear.write::<config::PGainId>(ID, 0.02).await?;
-    bear.write::<config::IGainId>(ID, 0.02).await?;
-    bear.write::<config::DGainId>(ID, 0.0).await?;
+    sleep(Duration::from_secs(2)).await;
 
-    bear.write::<config::PGainPos>(ID, 5.0).await?;
-    bear.write::<config::IGainPos>(ID, 0.0).await?;
-    bear.write::<config::DGainPos>(ID, 0.02).await?;
+    let present = bus.read_present_pos(args.id).await?.data;
+    println!("Present position:   {present:.4} rad");
 
-    bear.write::<config::Mode>(ID, 2).await?;
-
-    bear.write::<config::LimitIMax>(ID, 1.5).await?;
-
-    let min_pos = bear.read::<config::LimitPosMin>(ID).await?.data;
-
-    let max_pos = bear.read::<config::LimitPosMax>(ID).await?.data;
-
-    bear.write::<status::GoalPos>(ID, min_pos).await?;
-
-    bear.write::<status::TorqueEnable>(ID, 1).await?;
-
-    for _ in 1..10 {
-        bear.write::<status::GoalPos>(ID, min_pos + 0.1).await?;
-        thread::sleep(Duration::from_millis(1500));
-
-        bear.write::<status::GoalPos>(ID, max_pos - 0.1).await?;
-        thread::sleep(Duration::from_millis(1500));
-    }
     Ok(())
 }
