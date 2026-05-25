@@ -296,7 +296,7 @@ where
         let packet = self.read_packet_deadline(deadline).await?;
         let response = Response {
             motor_id: packet[PACKET_ID],
-            warning: ErrorFlags::from_bits_truncate(dbg!(packet[PACKET_ERROR])),
+            warning: ErrorFlags::from_bits_truncate(packet[PACKET_ERROR]),
             data: &packet[5..],
         };
         Ok(response)

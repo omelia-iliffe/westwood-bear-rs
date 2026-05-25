@@ -1,21 +1,82 @@
-# westwood robotics bear protocol
+# ww-bear
 
-An implementation of the protocol used to comunicate with the WestWood Robotics Bear Actuators.
+A Rust driver for [Westwood Robotics](https://www.westwoodrobotics.io/) BEAR actuators.
 
-Supported instructions are `Read`, `Write` and `SaveConfig`. `BulkReadWrite` is currently not supported.
+Provides both synchronous and asynchronous interfaces for communicating with BEAR motors over a serial bus.
+
+## Usage
+
+```rust
+use ww_bear::Bus;
+
+let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
+
+bus.ping(1)?;
+bus.write_mode(1, 2)?;
+bus.write_torque_enable(1, 1)?;
+bus.write_goal_pos(1, 1.57)?;
+
+let pos = bus.read_present_pos(1)?.data;
+println!("present position: {pos:.4} rad");
+```
+
+### Async
+
+An async interface is available under `ww_bear::asynchronous::Bus` with the same API:
+
+```rust
+use ww_bear::asynchronous::Bus;
+
+let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
+let pos = bus.read_present_pos(1).await?.data;
+```
+
+## Supported instructions
+
+| Instruction       | Supported |
+|-------------------|-----------|
+| Ping              | ✓         |
+| Read              | ✓         |
+| Write             | ✓         |
+| SaveConfig        | ✓         |
+| SetAbsolutePos    | ✓         |
+| BulkComm          | ✗         |
 
 ## Features
-- `std`
-- `alloc`
-- `serial2`:  
-  enables support for the `serial2` crate and adds helper methods for opening a port.
+
+| Feature   | Default | Description |
+|-----------|---------|-------------|
+| `std`     | yes     | Enables `std` support. Disable for `no_std` use. |
+| `alloc`   | yes     | Enables heap allocation (implied by `std`). |
+| `serial2` | yes     | Enables `Bus::open()` via the `serial2`/`serial2-tokio` crates. |
+| `defmt`   | no      | Enables `defmt` logging and derives for embedded targets. |
 
 ### `no_std`
-This crate is `no_std` compatible. Disable the default features to exclude `std`.
+
+This crate is `no_std` compatible. Disable default features and provide your own `SerialPort` implementation:
+
+```toml
+[dependencies]
+ww-bear = { version = "...", default-features = false }
+```
+
+## Examples
+
+| Example              | Description |
+|----------------------|-------------|
+| `ping`               | Scan one or more ports/baud rates for motors and print their positions. |
+| `set_position`       | Set a motor's goal position. |
+| `set_position_async` | Async version of `set_position`. |
+| `set_abs_position`   | Reset a motor's absolute position (requires backup battery). |
+| `setup_motor`        | Interactive wizard to configure a motor's gains, limits, and ID. |
+
+```sh
+cargo run --example ping -- --port /dev/ttyUSB0 --baud 8000000
+cargo run --example set_position -- --id 1 /dev/ttyUSB0 1.57
+```
 
 ## License
-Licensed under either of <a href="LICENSE-APACHE">Apache License, Version
-2.0</a> or <a href="LICENSE-MIT">MIT license</a> at your option.
 
-The structure and layout of this crate is heavily influenced by [robohouse-delft/dynamixel2-rs](https://github.com/robohouse-delft/dynamixel2-rs) crate, which is licensed under the BSD 2-Clause license.
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT) at your option.
 
+The structure and layout of this crate is heavily influenced by the [dynamixel2-rs](https://github.com/robohouse-delft/dynamixel2-rs) crate, licensed under the BSD 2-Clause license.
