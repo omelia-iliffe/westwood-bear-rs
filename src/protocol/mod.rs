@@ -8,6 +8,8 @@ pub use motor_error::{ERROR_FLAGS, WARNING_FLAGS};
 mod response;
 
 pub use response::Response;
+mod bulk_write_data;
+pub use bulk_write_data::BulkWriteData;
 
 pub(crate) const PACKET_ID: usize = 2;
 pub(crate) const PACKET_LEN: usize = 3;

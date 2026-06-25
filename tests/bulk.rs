@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use ww_bear::{Bus, Response, SerialPort, StatusRegister};
+use ww_bear::{BulkWriteData, Bus, SerialPort, StatusRegister};
 
 /// A fake serial port that records written bytes and serves scripted bytes to reads.
 struct MockPort {
@@ -96,15 +96,18 @@ fn bulk_read_request_and_responses() {
     let mut bus = open(responses);
 
     let mut got: Vec<(u8, Vec<u8>)> = Vec::new();
-    bus.bulk_read(&[1, 2], &[StatusRegister::PresentPos, StatusRegister::PresentVel], |r| {
-        got.push((r.motor_id, r.data.to_vec()));
-    })
+    bus.bulk_read(
+        &[1, 2],
+        &[StatusRegister::PresentPos, StatusRegister::PresentVel],
+        |r| {
+            let r = r.unwrap();
+            got.push((r.motor_id, r.data.to_vec()));
+        },
+    )
     .unwrap();
 
     // Exact request bytes: FF FF FE LEN 12 M flags read_addrs... crc
-    let expected = [
-        0xFF, 0xFF, 0xFE, 0x08, 0x12, 0x02, 0x20, 0x09, 0x08, 0x01, 0x02, 0xB1,
-    ];
+    let expected = [0xFF, 0xFF, 0xFE, 0x08, 0x12, 0x02, 0x20, 0x09, 0x08, 0x01, 0x02, 0xB1];
     assert_eq!(bus.serial_port().written, expected);
 
     assert_eq!(got.len(), 2);
@@ -122,35 +125,50 @@ fn bulk_read_write_request() {
     let mut responses = status_packet(1, 0x80, &[1, 2, 3, 4]);
     responses.extend_from_slice(&status_packet(2, 0x80, &[5, 6, 7, 8]));
 
-    let rows: [&[u8]; 2] = [&m1_data, &m2_data];
+    let devices = [
+        BulkWriteData {
+            motor_id: 1,
+            data: &m1_data[..],
+        },
+        BulkWriteData {
+            motor_id: 2,
+            data: &m2_data[..],
+        },
+    ];
     let mut bus = open(responses);
     bus.bulk_read_write(
-        &[1, 2],
+        &devices,
         &[StatusRegister::PresentPos],
         &[StatusRegister::GoalPos],
-        &rows,
         |_| {},
     )
     .unwrap();
 
     let expected = [
-        0xFF, 0xFF, 0xFE, 0x10, 0x12, 0x02, 0x11, 0x09, 0x05, 0x01, 0xAA, 0xBB, 0xCC, 0xDD, 0x02,
-        0x11, 0x22, 0x33, 0x44, 0x03,
+        0xFF, 0xFF, 0xFE, 0x10, 0x12, 0x02, 0x11, 0x09, 0x05, 0x01, 0xAA, 0xBB, 0xCC, 0xDD, 0x02, 0x11, 0x22, 0x33,
+        0x44, 0x03,
     ];
     assert_eq!(bus.serial_port().written, expected);
 }
 
 #[test]
 fn bulk_write_only_sends_no_read() {
-    let r1: [u8; 4] = [1, 2, 3, 4];
-    let r2: [u8; 4] = [5, 6, 7, 8];
-    let rows: [&[u8]; 2] = [&r1, &r2];
+    let devices = [
+        BulkWriteData {
+            motor_id: 1,
+            data: [1u8, 2, 3, 4],
+        },
+        BulkWriteData {
+            motor_id: 2,
+            data: [5u8, 6, 7, 8],
+        },
+    ];
     let mut bus = open(Vec::new());
-    bus.bulk_write(&[1, 2], &[StatusRegister::GoalPos], &rows).unwrap();
+    bus.bulk_write(&devices, &[StatusRegister::GoalPos]).unwrap();
 
     let expected = [
-        0xFF, 0xFF, 0xFE, 0x0F, 0x12, 0x02, 0x01, 0x05, 0x01, 0x01, 0x02, 0x03, 0x04, 0x02, 0x05,
-        0x06, 0x07, 0x08, 0xB1,
+        0xFF, 0xFF, 0xFE, 0x0F, 0x12, 0x02, 0x01, 0x05, 0x01, 0x01, 0x02, 0x03, 0x04, 0x02, 0x05, 0x06, 0x07, 0x08,
+        0xB1,
     ];
     assert_eq!(bus.serial_port().written, expected);
     // Write-only: no reply should have been read.
@@ -165,12 +183,13 @@ fn bulk_read_alloc_returns_owned() {
     responses.extend_from_slice(&status_packet(9, 0x80, &m2_data));
 
     let mut bus = open(responses);
-    let replies: Vec<Response<Vec<u8>>> =
-        bus.bulk_read_alloc(&[7, 9], &[StatusRegister::PresentPos]).unwrap();
+    let replies = bus.bulk_read_alloc(&[7, 9], &[StatusRegister::PresentPos]).unwrap();
 
     assert_eq!(replies.len(), 2);
-    assert_eq!(replies[0].motor_id, 7);
-    assert_eq!(replies[0].data, m1_data.to_vec());
-    assert_eq!(replies[1].motor_id, 9);
-    assert_eq!(replies[1].data, m2_data.to_vec());
+    let r0 = replies[0].as_ref().unwrap();
+    assert_eq!(r0.motor_id, 7);
+    assert_eq!(r0.data, m1_data.to_vec());
+    let r1 = replies[1].as_ref().unwrap();
+    assert_eq!(r1.motor_id, 9);
+    assert_eq!(r1.data, m2_data.to_vec());
 }

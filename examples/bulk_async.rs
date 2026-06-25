@@ -1,7 +1,7 @@
 use clap::Parser;
-use std::thread;
-use std::time::Duration;
-use ww_bear::{BulkWriteData, Bus, StatusRegister};
+use tokio::time::{Duration, sleep};
+use ww_bear::asynchronous::Bus;
+use ww_bear::{BulkWriteData, StatusRegister};
 
 #[derive(Parser)]
 struct Args {
@@ -17,7 +17,8 @@ struct Args {
     baud: u32,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let args = Args::parse();
     let mut bus = Bus::open(&args.port, args.baud)?;
@@ -29,9 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Mode is a config register, so it can't be set in bulk. Enable position mode
     // and torque on each motor individually first.
     for &id in &args.ids {
-        bus.ping(id)?;
-        bus.write_mode(id, 2)?;
-        bus.write_torque_enable(id, 1)?;
+        bus.ping(id).await?;
+        bus.write_mode(id, 2).await?;
+        bus.write_torque_enable(id, 1).await?;
     }
     println!("Connected to motors {:?}", args.ids);
 
@@ -41,10 +42,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         motor_id,
         data: args.position.to_le_bytes(),
     });
-    bus.bulk_write(devices, &[StatusRegister::GoalPos])?;
+    bus.bulk_write(devices, &[StatusRegister::GoalPos]).await?;
     println!("Goal position set to {:.4} rad on all motors", args.position);
 
-    thread::sleep(Duration::from_secs(2));
+    sleep(Duration::from_secs(2)).await;
 
     // Bulk read: read present position and velocity from every motor in a single packet.
     // Each reply's `data` is the concatenated read registers (4 bytes each), in request order.
@@ -62,7 +63,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             Err(e) => eprintln!("reply failed to read: {e}"),
         },
-    )?;
+    )
+    .await?;
 
     Ok(())
 }
