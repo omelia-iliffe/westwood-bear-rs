@@ -30,6 +30,11 @@ path = "examples/ping.rs"
 required-features = ["std"]
 
 [[example]]
+name = "bulk"
+path = "examples/bulk.rs"
+required-features = ["std"]
+
+[[example]]
 name = "setup_motor"
 path = "examples/setup_motor.rs"
 required-features = ["std"]

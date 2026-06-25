@@ -14,8 +14,6 @@ pub(crate) const PACKET_LEN: usize = 3;
 pub(crate) const PACKET_ERROR: usize = 4;
 
 /// The instructions supported by the BEAR protocol.
-///
-/// Note: `BulkComm` is not yet supported by this crate.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[repr(u8)]
@@ -35,7 +33,7 @@ pub enum Instruction {
     SaveCfg = 0x06,
     /// Set the absolute position of a motor with a backup battery.
     SetAbsPos = 0x08,
-    /// Bulk read/write multiple motors in a single packet. Not yet supported.
+    /// Bulk read/write multiple motors in a single packet. See [`crate::Bus::bulk_comm`].
     BulkComm = 0x12,
 }
 

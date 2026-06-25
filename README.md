@@ -31,6 +31,32 @@ let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
 let pos = bus.read_present_pos(1).await?.data;
 ```
 
+### Bulk
+
+Read and/or write the same status registers across several motors in a single packet. Each
+read reply borrows the bus' shared buffer, so replies are handed to a callback:
+
+```rust
+use ww_bear::{Bus, StatusRegister};
+
+let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
+let ids = [1, 2, 3];
+
+// Bulk write: same goal position on every motor (4 little-endian bytes per write register).
+let goal = 1.57f32.to_le_bytes();
+let write_data: Vec<&[u8]> = ids.iter().map(|_| goal.as_slice()).collect();
+bus.bulk_write(&ids, &[StatusRegister::GoalPos], &write_data)?;
+
+// Bulk read: present position from every motor.
+bus.bulk_read(&ids, &[StatusRegister::PresentPos], |response| {
+    let pos = f32::from_le_bytes(response.data[0..4].try_into().unwrap());
+    println!("motor {}: {pos:.4} rad", response.motor_id);
+})?;
+```
+
+Bulk is only available for status registers. With the `alloc` feature, `bulk_read_alloc`
+returns the replies as owned `Vec`s instead of using a callback.
+
 ## Supported instructions
 
 | Instruction       | Supported |
@@ -40,7 +66,7 @@ let pos = bus.read_present_pos(1).await?.data;
 | Write             | ✓         |
 | SaveConfig        | ✓         |
 | SetAbsolutePos    | ✓         |
-| BulkComm          | ✗         |
+| BulkComm          | ✓         |
 
 ## Features
 
@@ -69,6 +95,7 @@ ww-bear = { version = "...", default-features = false }
 | `set_position_async` | Async version of `set_position`. |
 | `set_abs_position`   | Reset a motor's absolute position (requires backup battery). |
 | `setup_motor`        | Interactive wizard to configure a motor's gains, limits, and ID. |
+| `bulk`               | Bulk write a goal position to several motors, then bulk read their state. |
 
 ```sh
 cargo run --example ping -- --port /dev/ttyUSB0 --baud 8000000
