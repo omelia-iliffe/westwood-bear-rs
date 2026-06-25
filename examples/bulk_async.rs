@@ -1,5 +1,5 @@
 use clap::Parser;
-use tokio::time::{Duration, sleep};
+use tokio::time::{sleep, Duration};
 use ww_bear::asynchronous::Bus;
 use ww_bear::{BulkWriteData, StatusRegister};
 
@@ -37,11 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connected to motors {:?}", args.ids);
 
     // Bulk write: set the same goal position on every motor in a single packet.
-    // Each `BulkWriteData` pairs a motor id with its 4 encoded bytes per write register.
-    let devices = args.ids.iter().map(|&motor_id| BulkWriteData {
-        motor_id,
-        data: args.position.to_le_bytes(),
-    });
+    // `from_f32` pairs a motor id with the little-endian bytes for one f32 register.
+    let devices = args
+        .ids
+        .iter()
+        .map(|&motor_id| BulkWriteData::from_f32(motor_id, args.position));
     bus.bulk_write(devices, &[StatusRegister::GoalPos]).await?;
     println!("Goal position set to {:.4} rad on all motors", args.position);
 
@@ -54,8 +54,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[StatusRegister::PresentPos, StatusRegister::PresentVel],
         |response| match response {
             Ok(response) => {
-                let pos = f32::from_le_bytes(response.data[0..4].try_into().unwrap());
-                let vel = f32::from_le_bytes(response.data[4..8].try_into().unwrap());
+                let pos = response.f32(0).unwrap();
+                let vel = response.f32(1).unwrap();
                 println!(
                     "motor {:>3}: pos {pos:.4} rad, vel {vel:.4} rad/s (warning: {:?})",
                     response.motor_id, response.warning,

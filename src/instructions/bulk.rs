@@ -7,7 +7,7 @@
 //! Bulk is only available for status registers (the firmware reads/writes its status table for `0x12`).
 //!
 //! Because each motor reply borrows the bus' shared read buffer (and the next reply overwrites it),
-//! the core [`Bus::bulk_comm`] hands each reply to a callback. With the `"alloc"` feature, the
+//! the core [`Bus::bulk_read_write`] hands each reply to a callback. With the `"alloc"` feature, the
 //! [`Bus::bulk_read_alloc`] convenience copies each reply into an owned [`Vec`].
 
 use super::super::Bus;
@@ -33,8 +33,8 @@ where
 {
     /// Bulk read and/or write status registers across multiple motors in a single packet.
     ///
-    /// This is the core bulk primitive; [`Bus::bulk_read`], [`Bus::bulk_write`] and
-    /// [`Bus::bulk_read_write`] are thin wrappers around it.
+    /// This is the core bulk primitive; [`Bus::bulk_read`] and [`Bus::bulk_write`] are thin
+    /// wrappers around it.
     ///
     /// - `devices`: one [`BulkWriteData`] per motor, in the order they appear in the packet. Each
     ///   pairs a `motor_id` with its encoded write bytes, so the id and its data travel together
@@ -46,12 +46,14 @@ where
     /// - `write_registers`: the [`StatusRegister`]s to write to every motor (may be empty).
     /// - `on_response`: called once per expected motor reply, in the order the motors responded.
     ///   Each call receives a [`Result`]: on success the [`Response::data`] is the concatenated read
-    ///   bytes (`read_registers.len() * 4` bytes); split it into 4-byte chunks and decode each with
-    ///   [`f32::from_le_bytes`] / [`u32::from_le_bytes`] according to the register type. A reply that
+    ///   bytes (`read_registers.len() * 4` bytes). Decode each register by its position with
+    ///   [`Response::f32`] / [`Response::u32`] (e.g. `response.f32(0)`), or split the bytes into
+    ///   4-byte chunks and decode manually with [`f32::from_le_bytes`] / [`u32::from_le_bytes`]
+    ///   according to the register type. A reply that
     ///   fails to read (e.g. a motor times out) is delivered as an [`Err`] and the remaining replies
     ///   are still drained, so one bad reply does not abort the rest. When `read_registers` is empty
     ///   no reply is sent and `on_response` is never called.
-    pub async fn bulk_comm<Iter, Data, T, F>(
+    pub async fn bulk_read_write<Iter, Data, T, F>(
         &mut self,
         devices: Iter,
         read_registers: &[StatusRegister],
@@ -118,7 +120,7 @@ where
 
     /// Bulk read status registers from multiple motors in a single packet.
     ///
-    /// See [`Bus::bulk_comm`] for the meaning of the arguments and `on_response` callback.
+    /// See [`Bus::bulk_read_write`] for the meaning of the arguments and `on_response` callback.
     pub async fn bulk_read<F>(
         &mut self,
         motor_ids: &[u8],
@@ -129,10 +131,11 @@ where
         F: FnMut(Result<Response<&[u8]>, ReadError<SerialPort::Error>>),
     {
         // Read-only bulk carries no per-motor write data, so each entry is just the id.
-        let devices = motor_ids
-            .iter()
-            .map(|&motor_id| BulkWriteData::<&[u8]> { motor_id, data: &[] });
-        self.bulk_comm(devices, read_registers, &[], on_response).await
+        let devices = motor_ids.iter().map(|&motor_id| BulkWriteData {
+            motor_id,
+            data: &[][..],
+        });
+        self.bulk_read_write(devices, read_registers, &[], on_response).await
     }
 
     /// Bulk write status registers to multiple motors in a single packet.
@@ -150,28 +153,7 @@ where
         Data: AsRef<BulkWriteData<T>>,
         T: AsRef<[u8]>,
     {
-        self.bulk_comm(devices, &[], write_registers, |_| {}).await
-    }
-
-    /// Bulk read and write status registers across multiple motors in a single packet.
-    ///
-    /// Equivalent to [`Bus::bulk_comm`]; provided to mirror the read/write naming.
-    pub async fn bulk_read_write<Iter, Data, T, F>(
-        &mut self,
-        devices: Iter,
-        read_registers: &[StatusRegister],
-        write_registers: &[StatusRegister],
-        on_response: F,
-    ) -> Result<(), TransferError<SerialPort::Error>>
-    where
-        Iter: IntoIterator<Item = Data>,
-        Iter::IntoIter: ExactSizeIterator,
-        Data: AsRef<BulkWriteData<T>>,
-        T: AsRef<[u8]>,
-        F: FnMut(Result<Response<&[u8]>, ReadError<SerialPort::Error>>),
-    {
-        self.bulk_comm(devices, read_registers, write_registers, on_response)
-            .await
+        self.bulk_read_write(devices, &[], write_registers, |_| {}).await
     }
 
     /// Bulk read status registers, returning one reply per motor as owned [`Vec`]s.

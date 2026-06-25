@@ -35,7 +35,7 @@ pub enum Instruction {
     SaveCfg = 0x06,
     /// Set the absolute position of a motor with a backup battery.
     SetAbsPos = 0x08,
-    /// Bulk read/write multiple motors in a single packet. See [`crate::Bus::bulk_comm`].
+    /// Bulk read/write multiple motors in a single packet. See [`crate::Bus::bulk_read_write`].
     BulkComm = 0x12,
 }
 

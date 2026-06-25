@@ -193,3 +193,43 @@ fn bulk_read_alloc_returns_owned() {
     assert_eq!(r1.motor_id, 9);
     assert_eq!(r1.data, m2_data.to_vec());
 }
+
+#[test]
+fn bulk_write_data_helpers_encode_le_bytes() {
+    let f = BulkWriteData::from_f32(3, 1.57);
+    assert_eq!(f.motor_id, 3);
+    assert_eq!(f.data, 1.57f32.to_le_bytes());
+
+    let u = BulkWriteData::from_u32(4, 0x0102_0304);
+    assert_eq!(u.motor_id, 4);
+    assert_eq!(u.data, [0x04, 0x03, 0x02, 0x01]);
+}
+
+#[test]
+fn response_decode_helpers_unpack_le_bytes() {
+    use ww_bear::{ErrorFlags, Response};
+
+    // Two f32 registers: 1.0 then 2.0, little-endian.
+    let mut data = Vec::new();
+    data.extend_from_slice(&1.0f32.to_le_bytes());
+    data.extend_from_slice(&2.0f32.to_le_bytes());
+    let response = Response {
+        motor_id: 1,
+        warning: ErrorFlags::empty(),
+        data,
+    };
+
+    assert_eq!(response.f32(0), Some(1.0));
+    assert_eq!(response.f32(1), Some(2.0));
+    // Index past the data is out of range.
+    assert_eq!(response.f32(2), None);
+
+    // The same bytes decode as u32 when requested.
+    let u = Response {
+        motor_id: 2,
+        warning: ErrorFlags::empty(),
+        data: 0x0102_0304u32.to_le_bytes(),
+    };
+    assert_eq!(u.u32(0), Some(0x0102_0304));
+    assert_eq!(u.u32(1), None);
+}

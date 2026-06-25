@@ -42,17 +42,16 @@ use ww_bear::{BulkWriteData, Bus, StatusRegister};
 let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
 let ids = [1, 2, 3];
 
-// Bulk write: same goal position on every motor. Each `BulkWriteData` pairs a motor id with
-// its encoded bytes (4 little-endian bytes per write register).
-let goal = 1.57f32.to_le_bytes();
-let devices = ids.iter().map(|&motor_id| BulkWriteData { motor_id, data: goal });
+// Bulk write: same goal position on every motor. `from_f32` pairs a motor id with the
+// little-endian bytes for one f32 register.
+let devices = ids.iter().map(|&motor_id| BulkWriteData::from_f32(motor_id, 1.57));
 bus.bulk_write(devices, &[StatusRegister::GoalPos])?;
 
 // Bulk read: present position from every motor. Each reply is a `Result`, so one
 // motor failing to respond doesn't abort reading the others.
 bus.bulk_read(&ids, &[StatusRegister::PresentPos], |response| match response {
     Ok(response) => {
-        let pos = f32::from_le_bytes(response.data[0..4].try_into().unwrap());
+        let pos = response.f32(0).unwrap();
         println!("motor {}: {pos:.4} rad", response.motor_id);
     }
     Err(e) => eprintln!("reply failed to read: {e}"),

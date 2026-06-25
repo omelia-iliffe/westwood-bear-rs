@@ -7,7 +7,7 @@
 //! Additionally, helper functions exist for reading/write a specific register such as [`Bus::write_torque_enable`] and [`Bus::read_present_pos`].
 //!
 //! Multiple motors can be read and written in a single packet using the bulk methods,
-//! such as [`Bus::bulk_read`], [`Bus::bulk_write`] and [`Bus::bulk_comm`].
+//! such as [`Bus::bulk_read`], [`Bus::bulk_write`] and [`Bus::bulk_read_write`].
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![cfg_attr(not(feature = "std"), no_std)]
