@@ -1,3 +1,4 @@
+mod bulk;
 mod ping;
 mod read;
 mod save_config;

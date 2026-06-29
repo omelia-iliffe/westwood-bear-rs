@@ -31,6 +31,36 @@ let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
 let pos = bus.read_present_pos(1).await?.data;
 ```
 
+### Bulk
+
+Read and/or write the same status registers across several motors in a single packet. Each
+read reply borrows the bus' shared buffer, so replies are handed to a callback:
+
+```rust
+use ww_bear::{BulkWriteData, Bus, StatusRegister};
+
+let mut bus = Bus::open("/dev/ttyUSB0", 8_000_000)?;
+let ids = [1, 2, 3];
+
+// Bulk write: same goal position on every motor. `from_f32` pairs a motor id with the
+// little-endian bytes for one f32 register.
+let devices = ids.iter().map(|&motor_id| BulkWriteData::from_f32(motor_id, 1.57));
+bus.bulk_write(devices, &[StatusRegister::GoalPos])?;
+
+// Bulk read: present position from every motor. Each reply is a `Result`, so one
+// motor failing to respond doesn't abort reading the others.
+bus.bulk_read(&ids, &[StatusRegister::PresentPos], |response| match response {
+    Ok(response) => {
+        let pos = response.f32(0).unwrap();
+        println!("motor {}: {pos:.4} rad", response.motor_id);
+    }
+    Err(e) => eprintln!("reply failed to read: {e}"),
+})?;
+```
+
+Bulk is only available for status registers. With the `alloc` feature, `bulk_read_alloc`
+returns the replies as owned `Vec`s instead of using a callback.
+
 ## Supported instructions
 
 | Instruction       | Supported |
@@ -40,7 +70,7 @@ let pos = bus.read_present_pos(1).await?.data;
 | Write             | ✓         |
 | SaveConfig        | ✓         |
 | SetAbsolutePos    | ✓         |
-| BulkComm          | ✗         |
+| BulkComm          | ✓         |
 
 ## Features
 
@@ -69,6 +99,8 @@ ww-bear = { version = "...", default-features = false }
 | `set_position_async` | Async version of `set_position`. |
 | `set_abs_position`   | Reset a motor's absolute position (requires backup battery). |
 | `setup_motor`        | Interactive wizard to configure a motor's gains, limits, and ID. |
+| `bulk`               | Bulk write a goal position to several motors, then bulk read their state. |
+| `bulk_async`         | Async version of `bulk`. |
 
 ```sh
 cargo run --example ping -- --port /dev/ttyUSB0 --baud 8000000

@@ -5,6 +5,9 @@
 //! The main interface of the library is the [`Bus`], which is used to interact with devices on the serial communication bus.
 //! The [`Bus`] struct exposes methods for communicating, such as [`Bus::read`], [`Bus::write`], [`Bus::save_config`] and [`Bus::ping`].
 //! Additionally, helper functions exist for reading/write a specific register such as [`Bus::write_torque_enable`] and [`Bus::read_present_pos`].
+//!
+//! Multiple motors can be read and written in a single packet using the bulk methods,
+//! such as [`Bus::bulk_read`], [`Bus::bulk_write`] and [`Bus::bulk_read_write`].
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![cfg_attr(not(feature = "std"), no_std)]
