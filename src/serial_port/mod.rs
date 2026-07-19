@@ -8,8 +8,6 @@ use core::time::Duration;
 // can't distinguish the trees, and `only_sync`/`only_async` can't be applied directly
 // to an out-of-line `mod` declaration, so the declaration is emitted from a macro that
 // those attributes *can* gate.
-// Defined unconditionally but only invoked in whichever tree has its serial backend
-// enabled, so it is legitimately unused in the other tree's compilation.
 #[allow(unused_macros)]
 macro_rules! declare_serial2_module {
     () => {
