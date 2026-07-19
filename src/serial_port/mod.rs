@@ -2,8 +2,24 @@
 
 use core::time::Duration;
 
+// The serial2 backend (`serial2.rs`) is a single file compiled into both the sync
+// and async bisync trees. It must be available in the sync tree under the `serial2`
+// feature and in the async tree under the `serial2-tokio` feature. A single `#[cfg]`
+// can't distinguish the trees, and `only_sync`/`only_async` can't be applied directly
+// to an out-of-line `mod` declaration, so the declaration is emitted from a macro that
+// those attributes *can* gate.
+#[allow(unused_macros)]
+macro_rules! declare_serial2_module {
+    () => {
+        pub mod serial2;
+    };
+}
 #[cfg(feature = "serial2")]
-pub mod serial2;
+#[super::only_sync]
+declare_serial2_module!();
+#[cfg(feature = "serial2-tokio")]
+#[super::only_async]
+declare_serial2_module!();
 
 /// [`SerialPort`]s are used to communicate with the hardware by reading and writing data.
 ///

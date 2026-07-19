@@ -76,10 +76,11 @@ returns the replies as owned `Vec`s instead of using a callback.
 
 | Feature   | Default | Description |
 |-----------|---------|-------------|
-| `std`     | yes     | Enables `std` support. Disable for `no_std` use. |
-| `alloc`   | yes     | Enables heap allocation (implied by `std`). |
-| `serial2` | yes     | Enables `Bus::open()` via the `serial2`/`serial2-tokio` crates. |
-| `defmt`   | no      | Enables `defmt` logging and derives for embedded targets. |
+| `std`           | yes     | Enables `std` support. Disable for `no_std` use. |
+| `alloc`         | yes     | Enables heap allocation (implied by `std`). |
+| `serial2`       | yes     | Enables the blocking `Bus::open()` via the `serial2` crate (no `tokio`). |
+| `serial2-tokio` | no      | Enables the async `asynchronous::Bus::open()` via the `serial2-tokio` crate (pulls in `tokio`). Implies `serial2`. |
+| `defmt`         | no      | Enables `defmt` logging and derives for embedded targets. |
 
 ### `no_std`
 

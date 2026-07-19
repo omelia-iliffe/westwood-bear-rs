@@ -31,10 +31,10 @@ pub mod asynchronous {
     mod instructions;
     mod serial_port;
     pub use serial_port::SerialPort;
-    #[cfg(feature = "serial2")]
-    /// Public re-export of the serial2 crate.
+    #[cfg(feature = "serial2-tokio")]
+    /// Public re-export of the serial2-tokio crate.
     pub use serial2_tokio;
-    #[cfg(feature = "serial2")]
+    #[cfg(feature = "serial2-tokio")]
     use serial2_tokio::SerialPort as Serial2Port;
 }
 

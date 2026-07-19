@@ -1,6 +1,6 @@
 [package]
 name = "ww-bear"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2024"
 description = "Communication protocol for Westwood Robotics BEAR actuators"
 license = "MIT OR Apache-2.0"
@@ -12,37 +12,37 @@ categories = ["embedded", "hardware-support", "no-std"]
 [[example]]
 name = "set_position"
 path = "examples/set_position.rs"
-required-features = ["std"]
+required-features = ["serial2"]
 
 [[example]]
 name = "set_position_async"
 path = "examples/set_position_async.rs"
-required-features = ["std"]
+required-features = ["serial2-tokio"]
 
 [[example]]
 name = "set_abs_position"
 path = "examples/set_abs_position.rs"
-required-features = ["std"]
+required-features = ["serial2"]
 
 [[example]]
 name = "ping"
 path = "examples/ping.rs"
-required-features = ["std"]
+required-features = ["serial2"]
 
 [[example]]
 name = "bulk"
 path = "examples/bulk.rs"
-required-features = ["std"]
+required-features = ["serial2"]
 
 [[example]]
 name = "bulk_async"
 path = "examples/bulk_async.rs"
-required-features = ["std"]
+required-features = ["serial2-tokio"]
 
 [[example]]
 name = "setup_motor"
 path = "examples/setup_motor.rs"
-required-features = ["std"]
+required-features = ["serial2"]
 
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
@@ -78,4 +78,5 @@ default = ["std", "serial2"]
 alloc = ["defmt?/alloc"]
 std = ["alloc"]
 defmt = ["dep:defmt"]
-serial2 = ["dep:serial2", "serial2-tokio", "tokio"]
+serial2 = ["dep:serial2", "std"]
+serial2-tokio = ["std", "dep:serial2-tokio", "dep:tokio"]
