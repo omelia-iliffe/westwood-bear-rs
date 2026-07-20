@@ -11,7 +11,7 @@
 //! [`Bus::bulk_read_alloc`] convenience copies each reply into an owned [`Vec`].
 
 use super::super::Bus;
-use crate::error::{BufferTooSmallError, ReadError, TransferError};
+use crate::error::{BufferTooSmallError, ReadError, TooManyRegistersError, TransferError, WriteError};
 use crate::protocol::Response;
 use crate::{BulkWriteData, Instruction, StatusRegister};
 
@@ -20,6 +20,10 @@ const BROADCAST_ID: u8 = 0xFE;
 
 /// Bytes per register value on the wire (4 little-endian bytes).
 const REGISTER_BYTES: usize = 4;
+
+/// Maximum registers per direction in a bulk packet. The read and write counts
+/// share one byte (a 4-bit nibble each), so each direction supports at most 15.
+const MAX_BULK_REGISTERS: usize = 0x0F;
 
 /// Non-payload bytes in a status reply, added to the read length to estimate the
 /// reply's on-wire size for the read timeout.
@@ -72,6 +76,11 @@ where
         let read_count = read_registers.len();
         let write_count = write_registers.len();
         let write_len = write_count * REGISTER_BYTES;
+
+        // The read and write counts are packed into a single byte (a nibble each),
+        // so reject anything that would overflow the nibble instead of silently truncating.
+        TooManyRegistersError::check(read_count, MAX_BULK_REGISTERS).map_err(WriteError::from)?;
+        TooManyRegistersError::check(write_count, MAX_BULK_REGISTERS).map_err(WriteError::from)?;
 
         let parameter_count = 2 + read_count + write_count + motor_count * (1 + write_len);
 
