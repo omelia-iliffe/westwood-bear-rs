@@ -99,7 +99,6 @@ ww-bear = { version = "...", default-features = false }
 | `set_position`       | Set a motor's goal position. |
 | `set_position_async` | Async version of `set_position`. |
 | `set_abs_position`   | Reset a motor's absolute position (requires backup battery). |
-| `setup_motor`        | Interactive wizard to configure a motor's gains, limits, and ID. |
 | `bulk`               | Bulk write a goal position to several motors, then bulk read their state. |
 | `bulk_async`         | Async version of `bulk`. |
 
