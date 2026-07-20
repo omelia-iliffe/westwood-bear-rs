@@ -79,7 +79,7 @@ returns the replies as owned `Vec`s instead of using a callback.
 | `std`           | yes     | Enables `std` support. Disable for `no_std` use. |
 | `alloc`         | yes     | Enables heap allocation (implied by `std`). |
 | `serial2`       | yes     | Enables the blocking `Bus::open()` via the `serial2` crate (no `tokio`). |
-| `serial2-tokio` | no      | Enables the async `asynchronous::Bus::open()` via the `serial2-tokio` crate (pulls in `tokio`). Implies `serial2`. |
+| `serial2-tokio` | no      | Enables the async `asynchronous::Bus::open()` via the `serial2-tokio` crate (pulls in `tokio`). Independent of `serial2`; enable both for the blocking and async ports together. |
 | `defmt`         | no      | Enables `defmt` logging and derives for embedded targets. |
 
 ### `no_std`

@@ -23,6 +23,9 @@ pub enum WriteError<E> {
     /// The write buffer is too small to contain the whole stuffed message.
     BufferTooSmall(BufferTooSmallError),
 
+    /// A bulk request asked for more registers than the wire format can encode.
+    TooManyRegisters(TooManyRegistersError),
+
     /// Failed to discard the input buffer before writing the instruction.
     #[from(skip)]
     DiscardBuffer(E),
@@ -30,6 +33,32 @@ pub enum WriteError<E> {
     /// Failed to write the instruction.
     #[from(skip)]
     Write(E),
+}
+
+/// A bulk request specified more registers than the wire format can encode.
+///
+/// The bulk packet packs the read and write register counts into a single byte,
+/// one 4-bit nibble each, so each direction supports at most 15 registers.
+#[derive(Debug, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("too many bulk registers: {} requested, but at most {} are supported", self.count, self.max)]
+pub struct TooManyRegistersError {
+    /// The number of registers requested.
+    pub count: usize,
+
+    /// The maximum number of registers supported.
+    pub max: usize,
+}
+
+impl TooManyRegistersError {
+    /// Check that a register count fits within the supported maximum.
+    pub fn check(count: usize, max: usize) -> Result<(), Self> {
+        if count <= max {
+            Ok(())
+        } else {
+            Err(Self { count, max })
+        }
+    }
 }
 
 /// The buffer is too small to hold the entire message.

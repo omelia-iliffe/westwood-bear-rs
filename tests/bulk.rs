@@ -176,6 +176,47 @@ fn bulk_write_only_sends_no_read() {
 }
 
 #[test]
+fn bulk_read_rejects_too_many_registers() {
+    use ww_bear::error::{TransferError, WriteError};
+
+    // There are 16 StatusRegister variants, but the read/write counts share one
+    // byte (a nibble each), so 16 registers cannot be encoded and must error
+    // rather than silently truncating the count to zero.
+    let all_registers = [
+        StatusRegister::TorqueEnable,
+        StatusRegister::HomingComplete,
+        StatusRegister::GoalId,
+        StatusRegister::GoalIq,
+        StatusRegister::GoalVel,
+        StatusRegister::GoalPos,
+        StatusRegister::PresentId,
+        StatusRegister::PresentIq,
+        StatusRegister::PresentVel,
+        StatusRegister::PresentPos,
+        StatusRegister::InputVoltage,
+        StatusRegister::WindingTemp,
+        StatusRegister::PowerstageTemp,
+        StatusRegister::IcTemp,
+        StatusRegister::ErrorStatus,
+        StatusRegister::WarningStatus,
+    ];
+    assert_eq!(all_registers.len(), 16);
+
+    let mut bus = open(Vec::new());
+    let result = bus.bulk_read(&[1], &all_registers, |_| {});
+
+    match result {
+        Err(TransferError::WriteError(WriteError::TooManyRegisters(e))) => {
+            assert_eq!(e.count, 16);
+            assert_eq!(e.max, 15);
+        }
+        other => panic!("expected TooManyRegisters error, got {other:?}"),
+    }
+    // Nothing should have been written to the wire.
+    assert!(bus.serial_port().written.is_empty());
+}
+
+#[test]
 fn bulk_read_alloc_returns_owned() {
     let m1_data = [0u8, 0, 0x80, 0x3F];
     let m2_data = [0u8, 0, 0x40, 0x40];
