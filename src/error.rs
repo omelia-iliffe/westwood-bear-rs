@@ -105,11 +105,11 @@ impl Display for InvalidPacketId {
         if let Some(expected) = self.expected {
             write!(
                 f,
-                "invalid packet ID, expected {:#02X}, got {:#02X}",
+                "invalid packet ID, expected {:#04X}, got {:#04X}",
                 expected, self.actual
             )
         } else {
-            write!(f, "invalid packet ID: {:#02X}", self.actual)
+            write!(f, "invalid packet ID: {:#04X}", self.actual)
         }
     }
 }
