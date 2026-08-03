@@ -148,10 +148,6 @@ pub enum StatusRegister {
     PowerstageTemp = 0x0C,
     /// IC TEMP register, f32, read only
     IcTemp = 0x0D,
-    /// ERROR STATUS register, f32, read only
-    ErrorStatus = 0x0E,
-    /// WARNING STATUS register, f32, read only
-    WarningStatus = 0x0F,
 }
 
 impl StatusRegister {

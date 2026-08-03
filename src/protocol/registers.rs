@@ -195,6 +195,4 @@ pub mod status {
     register!(StatusRegister::WindingTemp, f32, RO);
     register!(StatusRegister::PowerstageTemp, f32, RO);
     register!(StatusRegister::IcTemp, f32, RO);
-    register!(StatusRegister::ErrorStatus, f32, RO);
-    register!(StatusRegister::WarningStatus, u32, RO);
 }
