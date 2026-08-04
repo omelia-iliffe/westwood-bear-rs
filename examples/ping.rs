@@ -14,9 +14,9 @@ struct Args {
     /// Baud rates to try, comma-separated. Defaults to 8000000.
     #[arg(short, long, value_delimiter = ',', default_values_t = vec![8_000_000u32])]
     baud: Vec<u32>,
-    /// Return time delay in milliseconds
+    /// Response timeout padding in milliseconds
     #[arg(short, long, default_value_t = 20)]
-    return_time_delay: u64,
+    response_timeout_padding: u64,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 Ok(bus) => bus,
             };
-            bus.set_return_time_delay(Duration::from_millis(args.return_time_delay));
+            bus.set_response_timeout_padding(Duration::from_millis(args.response_timeout_padding));
             for id in &ids {
                 match bus.ping(*id) {
                     Err(e) => log::debug!("  ID {id}: {e}"),

@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The default response timeout is very tight (~1 ms). USB-serial adapters add
     // variable latency, so give replies more headroom to avoid spurious timeouts.
-    bus.set_return_time_delay(Duration::from_millis(10));
+    bus.set_response_timeout_padding(Duration::from_millis(10));
 
     // Mode is a config register, so it can't be set in bulk. Enable position mode
     // and torque on each motor individually first.
