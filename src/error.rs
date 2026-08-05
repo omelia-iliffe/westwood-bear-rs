@@ -206,6 +206,14 @@ impl InvalidPacketId {
             })
         }
     }
+
+    /// Build an error for a packet ID that was not among any expected value.
+    ///
+    /// Used when a reply is matched against a set of expected IDs (as in a bulk read) rather than a
+    /// single expected ID, so there is no one value to report as expected.
+    pub fn unexpected(actual: u8) -> Self {
+        Self { actual, expected: None }
+    }
 }
 
 impl InvalidParameterCount {
