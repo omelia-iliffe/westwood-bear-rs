@@ -8,7 +8,7 @@
 - **(examples)** Add return-time-delay arg, remove setup-motor example
 - Validate bulk read replies by id and length
 ### Bug Fixes
-- Remove dbg! usage, update readme, bumb version
+- Remove dbg! usage, update readme, bump version
 - Reject bulk requests with too many registers; correct feature docs
 - [**breaking**] Remove unused `ErrorStatus` & `WarningStatus` registers
 ### Refactor

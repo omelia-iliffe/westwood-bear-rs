@@ -22,9 +22,12 @@ body = """{% if commits %}
 {% endfor %}\
 {% endif %}\
 """
-# Static notes for releases that predate conventional commits. Kept here (rather than
-# in the commit history) so a full regeneration always appends them below the generated
-# releases.
+# Curated notes for releases predating the current conventions (0.1.0 was never tagged;
+# 0.2.0's history is mostly non-conventional). Because these are static, always regenerate
+# over the post-0.2.0 range only, e.g.:
+#     git cliff v0.2.0..HEAD --tag vX.Y.Z
+# A bare `git cliff` (full history) would regenerate a partial 0.2.0 from the conventional
+# commits AND append this footer, duplicating the 0.2.0/0.1.0 sections.
 footer = """
 
 ## [0.2.0] - 2026-05-25
@@ -66,7 +69,10 @@ require_conventional = false
 # Split commits on newlines, treating each line as an individual commit.
 split_commits = false
 # An array of regex based parsers to modify commit messages prior to further processing.
-commit_preprocessors = []
+commit_preprocessors = [
+    # Correct a typo in a released commit subject without rewriting published history.
+    { pattern = '\bbumb\b', replace = "bump" },
+]
 # Prevent commits that are breaking from being excluded by commit parsers.
 protect_breaking_commits = false
 # An array of regex based parsers for extracting data from the commit message.
