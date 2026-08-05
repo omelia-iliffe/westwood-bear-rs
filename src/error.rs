@@ -89,7 +89,7 @@ pub enum ReadError<E> {
     Io(E),
 
     /// The received message is invalid.
-    #[from(InvalidMessage, InvalidChecksum, InvalidPacketId)]
+    #[from(InvalidMessage, InvalidChecksum, InvalidPacketId, InvalidParameterCount)]
     InvalidMessage(InvalidMessage),
 }
 

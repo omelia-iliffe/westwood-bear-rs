@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use ww_bear::error::{InvalidMessage, ReadError};
 use ww_bear::{BulkWriteData, Bus, SerialPort, StatusRegister};
 
 /// A fake serial port that records written bytes and serves scripted bytes to reads.
@@ -113,6 +114,59 @@ fn bulk_read_request_and_responses() {
     assert_eq!(got.len(), 2);
     assert_eq!(got[0], (1, m1_data.to_vec()));
     assert_eq!(got[1], (2, m2_data.to_vec()));
+}
+
+#[test]
+fn bulk_read_reports_unexpected_id_as_error() {
+    // Expect motors 1 and 2, but motor 1's reply carries the wrong id (5). That reply is reported as
+    // an InvalidPacketId error in its slot, while motor 2's correctly-addressed reply is delivered.
+    let m1_data = [0u8, 0, 0x80, 0x3F];
+    let m2_data = [0u8, 0, 0x40, 0x40];
+    let mut responses = status_packet(5, 0x80, &m1_data);
+    responses.extend_from_slice(&status_packet(2, 0x80, &m2_data));
+
+    let mut bus = open(responses);
+
+    let mut got: Vec<Result<(u8, Vec<u8>), (u8, Option<u8>)>> = Vec::new();
+    bus.bulk_read(&[1, 2], &[StatusRegister::PresentPos], |r| {
+        got.push(match r {
+            Ok(r) => Ok((r.motor_id, r.data.to_vec())),
+            Err(ReadError::InvalidMessage(InvalidMessage::InvalidPacketId(e))) => Err((e.actual, e.expected)),
+            Err(e) => panic!("unexpected error: {e}"),
+        });
+    })
+    .unwrap();
+
+    assert_eq!(got.len(), 2);
+    // Slot 0: the id mismatch is surfaced, not dropped.
+    assert_eq!(got[0], Err((5, Some(1))));
+    // Slot 1: the expected motor 2 reply is delivered.
+    assert_eq!(got[1], Ok((2, m2_data.to_vec())));
+}
+
+#[test]
+fn bulk_read_reports_wrong_length_as_error() {
+    // Motor 1 replies with 2 data bytes when a 4-byte PresentPos register was expected.
+    let m2_data = [0u8, 0, 0x40, 0x40];
+    let mut responses = status_packet(1, 0x80, &[0xAA, 0xBB]);
+    responses.extend_from_slice(&status_packet(2, 0x80, &m2_data));
+
+    let mut bus = open(responses);
+
+    let mut got: Vec<Result<(u8, Vec<u8>), usize>> = Vec::new();
+    bus.bulk_read(&[1, 2], &[StatusRegister::PresentPos], |r| {
+        got.push(match r {
+            Ok(r) => Ok((r.motor_id, r.data.to_vec())),
+            Err(ReadError::InvalidMessage(InvalidMessage::InvalidParameterCount(e))) => Err(e.actual),
+            Err(e) => panic!("unexpected error: {e}"),
+        });
+    })
+    .unwrap();
+
+    assert_eq!(got.len(), 2);
+    // Slot 0: 2 data bytes arrived when a 4-byte register was expected.
+    assert_eq!(got[0], Err(2));
+    assert_eq!(got[1], Ok((2, m2_data.to_vec())));
 }
 
 #[test]

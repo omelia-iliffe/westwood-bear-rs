@@ -11,12 +11,18 @@
 //! [`Bus::bulk_read_alloc`] convenience copies each reply into an owned [`Vec`].
 
 use super::super::Bus;
-use crate::error::{BufferTooSmallError, ReadError, TooManyRegistersError, TransferError, WriteError};
+use crate::error::{
+    BufferTooSmallError, InvalidPacketId, InvalidParameterCount, ReadError, TooManyRegistersError, TransferError,
+    WriteError,
+};
 use crate::protocol::Response;
 use crate::{BulkWriteData, Instruction, StatusRegister};
 
 /// Broadcast ID used to address all motors with a bulk packet.
 const BROADCAST_ID: u8 = 0xFE;
+
+/// Byte offset of the parameter section within a written packet: `FF FF`, id, len, instruction.
+const PACKET_PARAMS_START: usize = 5;
 
 /// Bytes per register value on the wire (4 little-endian bytes).
 const REGISTER_BYTES: usize = 4;
@@ -54,9 +60,10 @@ where
     ///   [`Response::f32`] / [`Response::u32`] (e.g. `response.f32(0)`), or split the bytes into
     ///   4-byte chunks and decode manually with [`f32::from_le_bytes`] / [`u32::from_le_bytes`]
     ///   according to the register type. A reply that
-    ///   fails to read (e.g. a motor times out) is delivered as an [`Err`] and the remaining replies
-    ///   are still drained, so one bad reply does not abort the rest. When `read_registers` is empty
-    ///   no reply is sent and `on_response` is never called.
+    ///   fails to read (e.g. a motor times out), whose id doesn't match the expected motor, or whose
+    ///   data length is wrong is delivered as an [`Err`] in that slot; the remaining replies are still
+    ///   drained, so one bad reply does not abort the rest. When `read_registers` is empty no reply is
+    ///   sent and `on_response` is never called.
     pub async fn bulk_read_write<Iter, Data, T, F>(
         &mut self,
         devices: Iter,
@@ -116,12 +123,19 @@ where
             return Ok(());
         }
 
-        // One status reply per motor, in the order they respond. A failed reply (e.g. a motor
-        // times out) is handed to the callback as an `Err`; we keep draining so one bad reply
-        // doesn't strand the remaining replies in the buffer or abort the rest.
-        let expected_parameters = (read_count * REGISTER_BYTES + REPLY_FRAMING_BYTES) as u8;
-        for _ in 0..motor_count {
-            let response = self.read_response(expected_parameters).await;
+        // Recover each motor's expected id from the packet still held in the write buffer.
+        let write_stride = 1 + write_len;
+        let first_id_index = PACKET_PARAMS_START + 2 + read_count + write_count;
+        let expected_data_len = read_count * REGISTER_BYTES;
+        let expected_parameters = (expected_data_len + REPLY_FRAMING_BYTES) as u8;
+
+        for i in 0..motor_count {
+            let expected_id = self.write_buffer.as_ref()[first_id_index + i * write_stride];
+            let response = self.read_response(expected_parameters).await.and_then(|response| {
+                InvalidPacketId::check(response.motor_id, expected_id)?;
+                InvalidParameterCount::check(response.data.len(), expected_data_len)?;
+                Ok(response)
+            });
             on_response(response);
         }
         Ok(())
