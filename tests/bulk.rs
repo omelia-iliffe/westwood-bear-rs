@@ -118,8 +118,10 @@ fn bulk_read_request_and_responses() {
 
 #[test]
 fn bulk_read_reports_unexpected_id_as_error() {
-    // Expect motors 1 and 2, but motor 1's reply carries the wrong id (5). That reply is reported as
-    // an InvalidPacketId error in its slot, while motor 2's correctly-addressed reply is delivered.
+    // Expect motors 1 and 2, but the first reply carries a foreign id (5) that was never addressed.
+    // Since replies are matched against the set of expected ids rather than by position, the foreign
+    // id is surfaced as an InvalidPacketId error (with no single expected id), while motor 2's reply
+    // is still delivered under its own id.
     let m1_data = [0u8, 0, 0x80, 0x3F];
     let m2_data = [0u8, 0, 0x40, 0x40];
     let mut responses = status_packet(5, 0x80, &m1_data);
@@ -138,10 +140,42 @@ fn bulk_read_reports_unexpected_id_as_error() {
     .unwrap();
 
     assert_eq!(got.len(), 2);
-    // Slot 0: the id mismatch is surfaced, not dropped.
-    assert_eq!(got[0], Err((5, Some(1))));
-    // Slot 1: the expected motor 2 reply is delivered.
+    // The foreign id is surfaced, not dropped, and not tied to a single expected id.
+    assert_eq!(got[0], Err((5, None)));
+    // The expected motor 2 reply is delivered under its own id.
     assert_eq!(got[1], Ok((2, m2_data.to_vec())));
+}
+
+#[test]
+fn bulk_read_recovers_replies_after_missing_earlier_motor() {
+    // Expect motors 1, 2 and 3, but motor 1 never replies. Motors 2 and 3 respond in order. With
+    // positional validation this cascaded into total data loss: motor 2's reply was checked against
+    // expected id 1 (InvalidPacketId), motor 3's against id 2 (InvalidPacketId), and the final read
+    // timed out. With set-membership matching, motors 2 and 3 are delivered under their own ids and
+    // only the single missing reply surfaces as an error (a timeout on the trailing read).
+    let m2_data = [0u8, 0, 0x40, 0x40];
+    let m3_data = [0u8, 0, 0x80, 0x40];
+    let mut responses = status_packet(2, 0x80, &m2_data);
+    responses.extend_from_slice(&status_packet(3, 0x80, &m3_data));
+
+    let mut bus = open(responses);
+
+    let mut got: Vec<Result<(u8, Vec<u8>), ()>> = Vec::new();
+    bus.bulk_read(&[1, 2, 3], &[StatusRegister::PresentPos], |r| {
+        got.push(match r {
+            Ok(r) => Ok((r.motor_id, r.data.to_vec())),
+            // The missing motor surfaces as a read failure (a timeout with no further bytes).
+            Err(_) => Err(()),
+        });
+    })
+    .unwrap();
+
+    assert_eq!(got.len(), 3);
+    // Both responding motors' data is recovered, delivered under their own ids...
+    assert_eq!(got[0], Ok((2, m2_data.to_vec())));
+    assert_eq!(got[1], Ok((3, m3_data.to_vec())));
+    // ...and exactly one reply is reported missing, rather than every later motor cascading.
+    assert_eq!(got[2], Err(()));
 }
 
 #[test]

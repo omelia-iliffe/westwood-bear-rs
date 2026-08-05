@@ -35,6 +35,25 @@ const MAX_BULK_REGISTERS: usize = 0x0F;
 /// reply's on-wire size for the read timeout.
 const REPLY_FRAMING_BYTES: usize = 3;
 
+/// A set of motor ids, used to check each bulk reply against the motors that were addressed.
+///
+/// Backed by a 256-bit bitmap (32 bytes, one bit per possible id), so it needs no allocation and
+/// works in `no_std` builds. The byte holds the id's high 5 bits; the bit within it, the low 3.
+#[derive(Default)]
+struct MotorIdSet {
+    bits: [u8; 32],
+}
+
+impl MotorIdSet {
+    fn insert(&mut self, id: u8) {
+        self.bits[(id / 8) as usize] |= 1 << (id % 8);
+    }
+
+    fn contains(&self, id: u8) -> bool {
+        self.bits[(id / 8) as usize] & (1 << (id % 8)) != 0
+    }
+}
+
 #[super::super::bisync]
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
 where
@@ -59,11 +78,13 @@ where
     ///   bytes (`read_registers.len() * 4` bytes). Decode each register by its position with
     ///   [`Response::f32`] / [`Response::u32`] (e.g. `response.f32(0)`), or split the bytes into
     ///   4-byte chunks and decode manually with [`f32::from_le_bytes`] / [`u32::from_le_bytes`]
-    ///   according to the register type. A reply that
-    ///   fails to read (e.g. a motor times out), whose id doesn't match the expected motor, or whose
-    ///   data length is wrong is delivered as an [`Err`] in that slot; the remaining replies are still
-    ///   drained, so one bad reply does not abort the rest. When `read_registers` is empty no reply is
-    ///   sent and `on_response` is never called.
+    ///   according to the register type. Each reply is delivered under its actual motor id, matched
+    ///   against the set of expected ids rather than by position, so a missing or out-of-order motor
+    ///   does not shift every later reply into an error. A reply that fails to read (e.g. a motor
+    ///   times out), whose id is not among the expected motors, or whose data length is wrong is
+    ///   delivered as an [`Err`]; the remaining replies are still drained, so one bad reply does not
+    ///   abort the rest. When `read_registers` is empty no reply is sent and `on_response` is never
+    ///   called.
     pub async fn bulk_read_write<Iter, Data, T, F>(
         &mut self,
         devices: Iter,
@@ -123,16 +144,28 @@ where
             return Ok(());
         }
 
-        // Recover each motor's expected id from the packet still held in the write buffer.
+        // Collect the ids of the motors we addressed, recovered from the packet still held in the
+        // write buffer. Each reply is matched against this set rather than against the id expected at
+        // its position, so a missing or out-of-order motor no longer cascades into errors for every
+        // later reply: each reply is delivered under its own id, and only a foreign id is rejected.
         let write_stride = 1 + write_len;
         let first_id_index = PACKET_PARAMS_START + 2 + read_count + write_count;
         let expected_data_len = read_count * REGISTER_BYTES;
         let expected_parameters = (expected_data_len + REPLY_FRAMING_BYTES) as u8;
 
+        let mut expected_ids = MotorIdSet::default();
         for i in 0..motor_count {
-            let expected_id = self.write_buffer.as_ref()[first_id_index + i * write_stride];
+            let id = self.write_buffer.as_ref()[first_id_index + i * write_stride];
+            expected_ids.insert(id);
+        }
+
+        // One reply is expected per motor. A reply that never arrives surfaces as a read error on one
+        // of these reads (typically a timeout on the final read), not as a mismatch on later motors.
+        for _ in 0..motor_count {
             let response = self.read_response(expected_parameters).await.and_then(|response| {
-                InvalidPacketId::check(response.motor_id, expected_id)?;
+                if !expected_ids.contains(response.motor_id) {
+                    return Err(InvalidPacketId::unexpected(response.motor_id).into());
+                }
                 InvalidParameterCount::check(response.data.len(), expected_data_len)?;
                 Ok(response)
             });
