@@ -296,6 +296,22 @@ where
         timeout: Duration,
     ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
         let deadline = self.serial_port.make_deadline(timeout);
+        self.read_response_deadline(deadline).await
+    }
+
+    /// Read a single response against a deadline the caller already holds.
+    ///
+    /// [`Self::read_response`] budgets a fresh timeout for one reply, which is right when one reply
+    /// is all that is coming. A caller expecting several replies back-to-back cannot use that: the
+    /// serial hardware hands bytes to userspace in chunks, when a FIFO trigger or an idle timeout is
+    /// reached, so a single read can return anywhere from part of one reply to the whole burst.
+    /// Budgeting the first of those reads for one reply times it out while the rest of the burst is
+    /// still arriving. Such a caller sizes one deadline for the whole burst and shares it across
+    /// every read via this method.
+    pub(crate) async fn read_response_deadline(
+        &mut self,
+        deadline: SerialPort::Instant,
+    ) -> Result<Response<&[u8]>, ReadError<SerialPort::Error>> {
         let packet = self.read_packet_deadline(deadline).await?;
         let response = Response {
             motor_id: packet[PACKET_ID],
