@@ -11,12 +11,14 @@
 //! [`Bus::bulk_read_alloc`] convenience copies each reply into an owned [`Vec`].
 
 use super::super::Bus;
+use super::super::bus::message_transfer_time;
 use crate::error::{
     BufferTooSmallError, InvalidPacketId, InvalidParameterCount, ReadError, TooManyRegistersError, TransferError,
     WriteError,
 };
 use crate::protocol::Response;
 use crate::{BulkWriteData, Instruction, StatusRegister};
+use core::time::Duration;
 
 /// Broadcast ID used to address all motors with a bulk packet.
 const BROADCAST_ID: u8 = 0xFE;
@@ -31,9 +33,38 @@ const REGISTER_BYTES: usize = 4;
 /// share one byte (a 4-bit nibble each), so each direction supports at most 15.
 const MAX_BULK_REGISTERS: usize = 0x0F;
 
-/// Non-payload bytes in a status reply, added to the read length to estimate the
-/// reply's on-wire size for the read timeout.
-const REPLY_FRAMING_BYTES: usize = 3;
+/// Non-payload bytes framing a packet on the wire: `FF FF`, id, length, instruction (in a request)
+/// or error (in a reply), and the trailing checksum.
+///
+/// The same six bytes frame the request written and every status reply read back, so adding this to
+/// a payload length gives the number of bytes that actually cross the wire.
+const PACKET_FRAMING_BYTES: usize = 6;
+
+/// Time budget covering the entire burst of replies to a bulk read.
+///
+/// The motors answer back-to-back, and the host's serial hardware does not hand bytes to userspace
+/// one reply at a time: it delivers in chunks, when a FIFO trigger or an idle timeout is reached. A
+/// single read can therefore return anything from part of one reply to the whole burst. Budgeting
+/// each read for one reply means the *first* read waits for most of the burst on a single reply's
+/// allowance, times out with those bytes still buffered, and hands them to the next read, shifting
+/// every later reply one slot early so the last motor is never read at all. One deadline sized for
+/// the whole burst, shared across every read, is the budget that matches what is on the wire.
+///
+/// The request is counted because [`super::super::SerialPort::write_all`] returns once the kernel
+/// has accepted the packet, not once it has been transmitted, so it may still be draining when the
+/// first read begins. `padding` is [`Bus::response_timeout_padding`], which becomes headroom on top
+/// of a correctly sized budget: the motors' own turnaround plus any scheduling jitter.
+fn bulk_burst_timeout(
+    request_parameters: usize,
+    motor_count: usize,
+    read_count: usize,
+    baud_rate: u32,
+    padding: Duration,
+) -> Duration {
+    let request_bytes = PACKET_FRAMING_BYTES + request_parameters;
+    let reply_bytes = motor_count * (PACKET_FRAMING_BYTES + read_count * REGISTER_BYTES);
+    message_transfer_time((request_bytes + reply_bytes) as u32, baud_rate) + padding
+}
 
 #[super::super::bisync]
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
@@ -64,6 +95,13 @@ where
     ///   data length is wrong is delivered as an [`Err`] in that slot; the remaining replies are still
     ///   drained, so one bad reply does not abort the rest. When `read_registers` is empty no reply is
     ///   sent and `on_response` is never called.
+    ///
+    /// All the replies share a single deadline, sized for the whole burst from the byte count of the
+    /// request and of every expected reply (plus [`Bus::response_timeout_padding`] as headroom), so
+    /// the batch is not cut short once it grows past what one reply's budget would allow. A motor
+    /// that never answers therefore costs the whole burst deadline rather than one reply's worth of
+    /// it, which is slower to notice than a per-reply timeout but does not corrupt the replies that
+    /// follow it.
     pub async fn bulk_read_write<Iter, Data, T, F>(
         &mut self,
         devices: Iter,
@@ -127,11 +165,22 @@ where
         let write_stride = 1 + write_len;
         let first_id_index = PACKET_PARAMS_START + 2 + read_count + write_count;
         let expected_data_len = read_count * REGISTER_BYTES;
-        let expected_parameters = (expected_data_len + REPLY_FRAMING_BYTES) as u8;
+
+        // One deadline for the whole burst, shared by every read below rather than recomputed per
+        // reply. See `bulk_burst_timeout` for why a per-reply budget silently loses the last motor
+        // once the batch outgrows it.
+        let timeout = bulk_burst_timeout(
+            parameter_count,
+            motor_count,
+            read_count,
+            self.baud_rate,
+            self.response_timeout_padding,
+        );
+        let deadline = self.serial_port.make_deadline(timeout);
 
         for i in 0..motor_count {
             let expected_id = self.write_buffer.as_ref()[first_id_index + i * write_stride];
-            let response = self.read_response(expected_parameters).await.and_then(|response| {
+            let response = self.read_response_deadline(deadline).await.and_then(|response| {
                 InvalidPacketId::check(response.motor_id, expected_id)?;
                 InvalidParameterCount::check(response.data.len(), expected_data_len)?;
                 Ok(response)
@@ -237,5 +286,97 @@ where
         })
         .await?;
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BAUD: u32 = 2_000_000;
+
+    /// Parameter bytes of a read-only bulk request, mirroring `parameter_count` in
+    /// [`Bus::bulk_read_write`]: the motor count, the register-count nibbles, one register address
+    /// per read register, and one id per motor.
+    fn read_only_parameters(motor_count: usize, read_count: usize) -> usize {
+        2 + read_count + motor_count
+    }
+
+    /// Bytes one motor's reply puts on the wire.
+    fn reply_frame_bytes(read_count: usize) -> usize {
+        PACKET_FRAMING_BYTES + read_count * REGISTER_BYTES
+    }
+
+    /// Each extra motor adds a whole reply frame to the wire, so the budget must grow by that
+    /// frame's transfer time. This is the property that was broken: a per-reply budget does not
+    /// move with the motor count at all, so past a certain batch size the first read times out
+    /// mid-burst and every later reply lands one slot early.
+    #[test]
+    fn burst_timeout_grows_by_one_reply_frame_per_motor() {
+        for read_count in [1, 6, MAX_BULK_REGISTERS] {
+            let at = |motor_count| {
+                bulk_burst_timeout(
+                    read_only_parameters(motor_count, read_count),
+                    motor_count,
+                    read_count,
+                    BAUD,
+                    Duration::ZERO,
+                )
+            };
+            // One id byte joins the request alongside the motor's reply frame.
+            let step = message_transfer_time(reply_frame_bytes(read_count) as u32 + 1, BAUD);
+
+            assert_eq!(at(2) - at(1), step, "read_count {read_count}");
+            assert_eq!(at(12) - at(11), step, "read_count {read_count}");
+            assert_eq!(at(12) - at(1), step * 11, "read_count {read_count}");
+        }
+    }
+
+    /// Each extra register widens every motor's reply by four payload bytes and adds one register
+    /// address to the request, so the budget must scale with the read set too.
+    #[test]
+    fn burst_timeout_grows_with_registers_read() {
+        for motor_count in [1, 6, 12] {
+            let at = |read_count| {
+                bulk_burst_timeout(
+                    read_only_parameters(motor_count, read_count),
+                    motor_count,
+                    read_count,
+                    BAUD,
+                    Duration::ZERO,
+                )
+            };
+            let step = message_transfer_time((motor_count * REGISTER_BYTES) as u32 + 1, BAUD);
+
+            assert_eq!(at(2) - at(1), step, "motor_count {motor_count}");
+            assert_eq!(at(6) - at(5), step, "motor_count {motor_count}");
+        }
+    }
+
+    /// The configuration this was diagnosed against: 12 motors, a 6-register read, 2 Mbaud. The
+    /// request is 26 bytes and each of the 12 replies is 30, so 386 bytes cross the wire — 1.93 ms,
+    /// matching the 1930 µs of measured wire time within a 2161 µs round trip.
+    #[test]
+    fn burst_timeout_covers_measured_twelve_motor_read() {
+        let padding = Duration::from_millis(3);
+        let timeout = bulk_burst_timeout(read_only_parameters(12, 6), 12, 6, BAUD, padding);
+
+        assert_eq!(reply_frame_bytes(6), 30);
+        assert_eq!(timeout, Duration::from_micros(1930) + padding);
+
+        // Every reply is covered, not just the one the old per-reply budget accounted for.
+        assert!(timeout >= message_transfer_time((12 * reply_frame_bytes(6)) as u32, BAUD));
+        assert!(timeout > message_transfer_time(reply_frame_bytes(6) as u32, BAUD) + padding);
+    }
+
+    /// The padding is headroom on top of the wire time, not a substitute for it.
+    #[test]
+    fn burst_timeout_adds_padding_on_top_of_wire_time() {
+        let at = |padding| bulk_burst_timeout(read_only_parameters(12, 6), 12, 6, BAUD, padding);
+
+        assert_eq!(
+            at(Duration::from_millis(3)) - at(Duration::ZERO),
+            Duration::from_millis(3)
+        );
     }
 }
