@@ -15,7 +15,7 @@ use crate::error::{
     BufferTooSmallError, InvalidPacketId, InvalidParameterCount, ReadError, TooManyRegistersError, TransferError,
     WriteError,
 };
-use crate::protocol::Response;
+use crate::protocol::{REGISTER_BYTES, Response};
 use crate::{BulkWriteData, Instruction, StatusRegister};
 
 /// Broadcast ID used to address all motors with a bulk packet.
@@ -23,9 +23,6 @@ const BROADCAST_ID: u8 = 0xFE;
 
 /// Byte offset of the parameter section within a written packet: `FF FF`, id, len, instruction.
 const PACKET_PARAMS_START: usize = 5;
-
-/// Bytes per register value on the wire (4 little-endian bytes).
-const REGISTER_BYTES: usize = 4;
 
 /// Maximum registers per direction in a bulk packet. The read and write counts
 /// share one byte (a 4-bit nibble each), so each direction supports at most 15.

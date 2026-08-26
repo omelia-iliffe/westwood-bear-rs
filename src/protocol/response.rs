@@ -1,3 +1,4 @@
+use crate::protocol::REGISTER_BYTES;
 use crate::protocol::motor_error::ErrorFlags;
 
 /// A response from a motor.
@@ -16,9 +17,6 @@ pub struct Response<T> {
     /// The data from the motor.
     pub data: T,
 }
-
-/// Bytes per register value on the wire (4 little-endian bytes).
-const REGISTER_BYTES: usize = 4;
 
 impl<T: AsRef<[u8]>> Response<T> {
     /// Decode the `index`th 4-byte register of the reply data as an `f32`.
