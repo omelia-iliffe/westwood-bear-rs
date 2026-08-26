@@ -4,8 +4,8 @@ use derive_more::Display;
 pub use registers::Register;
 mod instruction;
 pub use instruction::{
-    BROADCAST_ID, BulkComm, BulkCommEntries, BulkCommEntry, Packet, PacketKind, RegisterWrite, RegisterWrites,
-    STATUS_FLAG, register_writes,
+    BROADCAST_ID, BulkComm, BulkCommEntries, BulkCommEntry, MAX_READ_REGISTERS, Packet, PacketKind, RegisterWrite,
+    RegisterWrites, STATUS_FLAG, register_writes,
 };
 mod motor_error;
 pub use motor_error::ErrorFlags;

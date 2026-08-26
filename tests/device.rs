@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use ww_bear::error::{ReadError, WriteError};
 use ww_bear::{
-    BulkComm, BulkWriteData, Bus, ConfigRegister, Device, ErrorFlags, Instruction, MAX_PARAMETER_COUNT, Packet,
-    PacketKind, SerialPort, StatusRegister, register_writes,
+    BulkComm, BulkWriteData, Bus, ConfigRegister, Device, ErrorFlags, Instruction, MAX_PARAMETER_COUNT,
+    MAX_READ_REGISTERS, Packet, PacketKind, SerialPort, StatusRegister, register_writes,
 };
 
 /// A fake serial port: records what is written, serves a fixed script to reads.
@@ -685,6 +685,31 @@ fn rejects_a_ping_carrying_parameters() {
     let mut device = device(wire);
     assert!(matches!(
         device.read(Duration::from_millis(1)),
+        Err(ReadError::InvalidMessage(_))
+    ));
+}
+
+/// A read may name more registers than the standard table holds.
+///
+/// The table is not the whole address space, so the count is bounded by what a
+/// reply can carry, not by `StatusRegister::COUNT`.
+#[test]
+fn a_read_past_the_standard_table_is_served() {
+    let above_table: Vec<u8> = (0..20).collect();
+    assert!(above_table.len() > StatusRegister::COUNT);
+
+    let mut served = device(frame(3, Instruction::ReadStat as u8, &above_table));
+    let packet = served.read(Duration::from_millis(1)).expect("failed to decode");
+    let PacketKind::ReadStat { registers } = packet.kind else {
+        panic!("expected ReadStat, got {:?}", packet.kind)
+    };
+    assert_eq!(registers, above_table.as_slice());
+
+    // One past what a status reply can describe is still refused.
+    let too_many = vec![0u8; MAX_READ_REGISTERS + 1];
+    let mut refused = device(frame(3, Instruction::ReadStat as u8, &too_many));
+    assert!(matches!(
+        refused.read(Duration::from_millis(1)),
         Err(ReadError::InvalidMessage(_))
     ));
 }

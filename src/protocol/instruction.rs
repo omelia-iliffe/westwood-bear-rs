@@ -26,8 +26,8 @@
 //! request has to detach the request first: see [`Packet::copy_into`].
 
 use crate::error::{BufferTooSmallError, ExpectedCount, InvalidMessage, InvalidParameterCount};
-use crate::protocol::{PACKET_ERROR, PACKET_ID, REGISTER_BYTES};
-use crate::{ConfigRegister, Instruction, StatusRegister};
+use crate::protocol::{MAX_PARAMETER_COUNT, PACKET_ERROR, PACKET_ID, REGISTER_BYTES};
+use crate::Instruction;
 
 /// Bit 7 of the error byte, set on every status packet a motor sends.
 ///
@@ -69,7 +69,7 @@ pub enum PacketKind<T> {
     /// [`Instruction::Ping`]. Reply with the identification word.
     Ping,
 
-    /// [`Instruction::ReadStat`]. One byte per [`StatusRegister`] requested.
+    /// [`Instruction::ReadStat`]. One byte per [`StatusRegister`](crate::StatusRegister) requested.
     ReadStat {
         /// Register indices, one byte each.
         registers: T,
@@ -81,7 +81,7 @@ pub enum PacketKind<T> {
         parameters: T,
     },
 
-    /// [`Instruction::ReadCfg`]. One byte per [`ConfigRegister`] requested.
+    /// [`Instruction::ReadCfg`]. One byte per [`ConfigRegister`](crate::ConfigRegister) requested.
     ReadCfg {
         /// Register indices, one byte each.
         registers: T,
@@ -196,9 +196,10 @@ impl<T: AsRef<[u8]>> PacketKind<T> {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct RegisterWrite {
-    /// The register index. Raw rather than a [`StatusRegister`] /
-    /// [`ConfigRegister`], because a motor answers any in-range index and a
-    /// device emulating one has to do the same.
+    /// The register index. Raw rather than a
+    /// [`StatusRegister`](crate::StatusRegister) /
+    /// [`ConfigRegister`](crate::ConfigRegister), because a motor answers any
+    /// in-range index and a device emulating one has to do the same.
     pub register: u8,
 
     /// The value, still little-endian. Decode with [`RegisterWrite::f32`] or
@@ -226,6 +227,12 @@ pub struct RegisterWrites<'a> {
 
 /// Bytes per entry in a write instruction: the register index plus its value.
 const WRITE_STRIDE: usize = 1 + REGISTER_BYTES;
+
+/// The most registers one read instruction can name.
+///
+/// Bounded by the reply rather than by the standard table: a device may
+/// implement registers above it, so `ConfigRegister::COUNT` is not the limit.
+pub const MAX_READ_REGISTERS: usize = MAX_PARAMETER_COUNT / REGISTER_BYTES;
 
 impl Iterator for RegisterWrites<'_> {
     type Item = RegisterWrite;
@@ -303,11 +310,11 @@ impl<'a> Packet<&'a [u8]> {
                 PacketKind::SaveCfg
             },
             x if x == Instruction::ReadStat as u8 => {
-                registers(parameters, StatusRegister::COUNT)?;
+                registers(parameters)?;
                 PacketKind::ReadStat { registers: parameters }
             },
             x if x == Instruction::ReadCfg as u8 => {
-                registers(parameters, ConfigRegister::COUNT)?;
+                registers(parameters)?;
                 PacketKind::ReadCfg { registers: parameters }
             },
             x if x == Instruction::WriteStat as u8 => {
@@ -491,14 +498,14 @@ impl<T: AsRef<[u8]>> BulkComm<T> {
         self.parameters.as_ref()
     }
 
-    /// The [`StatusRegister`] indices to read from every listed motor.
+    /// The [`StatusRegister`](crate::StatusRegister) indices to read from every listed motor.
     ///
     /// Empty means write-only, in which case no motor replies at all.
     pub fn read_registers(&self) -> &[u8] {
         &self.parameters.as_ref()[Self::HEADER_LEN..][..self.read_count]
     }
 
-    /// The [`StatusRegister`] indices to write on every listed motor.
+    /// The [`StatusRegister`](crate::StatusRegister) indices to write on every listed motor.
     pub fn write_registers(&self) -> &[u8] {
         &self.parameters.as_ref()[Self::HEADER_LEN + self.read_count..][..self.write_count]
     }
@@ -656,10 +663,9 @@ fn exact(parameters: &[u8], expected: usize) -> Result<(), InvalidMessage> {
     }
 }
 
-/// A read instruction carries one byte per register and must ask for at least
-/// one. The motor firmware refuses a request for more registers than the table
-/// holds by sending nothing at all, so the count is bounded here too.
-fn registers(parameters: &[u8], max: usize) -> Result<(), InvalidMessage> {
+/// A read instruction carries one byte per register, asks for at least one, and
+/// cannot ask for more than [`MAX_READ_REGISTERS`].
+fn registers(parameters: &[u8]) -> Result<(), InvalidMessage> {
     if parameters.is_empty() {
         return Err(InvalidParameterCount {
             actual: 0,
@@ -667,10 +673,10 @@ fn registers(parameters: &[u8], max: usize) -> Result<(), InvalidMessage> {
         }
         .into());
     }
-    if parameters.len() > max {
+    if parameters.len() > MAX_READ_REGISTERS {
         return Err(InvalidParameterCount {
             actual: parameters.len(),
-            expected: ExpectedCount::Max(max),
+            expected: ExpectedCount::Max(MAX_READ_REGISTERS),
         }
         .into());
     }
