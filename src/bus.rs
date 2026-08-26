@@ -250,15 +250,8 @@ where
     {
         let len = parameter_count + 2; // + CRC, INST
 
-        // LEN is a single byte, so a frame cannot describe more than
-        // `MAX_PARAMETER_COUNT` parameter bytes. Checked before the buffer
-        // check, and separately from it, because `len as u8` below would
-        // otherwise truncate in silence: the frame would go out with a length
-        // byte that disagrees with its own contents, and every receiver would
-        // mis-frame it, fail the checksum and then desynchronise on the
-        // remainder. A buffer large enough to hold the bytes does not make the
-        // frame legal, which is why a caller-supplied large buffer made this
-        // reachable from `bulk_read_write`.
+        // Separate from the buffer check below: a big enough buffer does not make
+        // the frame legal, and `len as u8` would otherwise truncate in silence.
         BufferTooSmallError::check(HEADER_SIZE + len, MAX_PACKET_SIZE)?;
 
         // Check if the buffer can hold the message.
@@ -349,10 +342,7 @@ where
                 // Check if the read buffer is large enough for the entire message.
                 // We don't have to remove the read bytes, because `write_instruction()` already clears the read buffer.
                 crate::error::BufferTooSmallError::check(HEADER_SIZE + body_len, buffer_len).inspect_err(|_| {
-                    // Drop this header on the way out. Leaving it in place would
-                    // make every later read rediscover the same oversize frame
-                    // and fail again, wedging the reader on a message it can
-                    // never accept.
+                    // Drop the header, or every later read refinds this frame.
                     self.consume_read_bytes(HEADER_PREFIX.len());
                 })?;
 
@@ -381,12 +371,8 @@ where
         let checksum_message = buffer[parameters_end];
         let checksum_computed = checksum::calculate_checksum(&buffer[2..parameters_end]);
         if checksum_message != checksum_computed {
-            // Resync from just past the header rather than consuming
-            // `message_len`. That length came from the LEN byte of the very
-            // frame that just failed validation, so trusting it lets a single
-            // corrupted length byte swallow the next, good, frame along with
-            // this one. Dropping the header instead makes `remove_garbage()`
-            // rescan for the next `FF FF`.
+            // `message_len` came from the LEN byte of the frame that just failed
+            // validation, so resync from the header rather than trusting it.
             self.consume_read_bytes(HEADER_PREFIX.len());
             return Err(crate::error::InvalidChecksum {
                 message: checksum_message,
@@ -406,9 +392,7 @@ where
         let garbage_len = find_header(&read_buffer[..self.read_len][self.used_bytes..]);
         if garbage_len > 0 {
             debug!("skipping {} bytes of leading garbage.", garbage_len);
-            // `garbage_len` counts from `used_bytes`, so the skipped bytes start
-            // there. Indexing from 0 would print the head of the message that
-            // was already consumed instead.
+            // `garbage_len` counts from `used_bytes`, not from 0.
             trace!(
                 "skipped garbage: {:02X?}",
                 &read_buffer[self.used_bytes..][..garbage_len]

@@ -1,10 +1,8 @@
 //! Framing and resynchronisation tests against a mock serial port.
 //!
-//! These cover the read loop's recovery behaviour and the one-byte `LEN`
-//! field's limits, both of which are only reachable through the client's
-//! multi-reply path: [`Bus::bulk_read`] issues one instruction and then reads a
-//! reply per motor, so a frame that fails validation is followed by a good one
-//! that must still arrive.
+//! Driven through `bulk_read`, which reads a reply per motor from one
+//! instruction: that is the only way to see the reader recover from a bad frame
+//! and still deliver the next one.
 
 use std::time::Duration;
 
@@ -104,9 +102,6 @@ fn bulk_read_outcomes(bus: &mut Bus<MockPort, Vec<u8>>, ids: &[u8]) -> Vec<Resul
 }
 
 /// A frame whose length byte was corrupted must cost only that frame.
-///
-/// The length used to resynchronise came from the frame that just failed its
-/// checksum, so trusting it let one line glitch swallow the next reply as well.
 #[test]
 fn a_corrupted_length_does_not_swallow_the_following_reply() {
     let good = [0xAAu8, 0xAA, 0xAA, 0xAA];
@@ -157,10 +152,7 @@ fn an_oversize_reply_does_not_wedge_the_reader() {
 
 /// `LEN` is one byte, so an oversize parameter block cannot be framed at all.
 ///
-/// A buffer large enough to hold the bytes does not make the frame legal, which
-/// is what made this reachable: `bulk_read_write` does not bound its motor
-/// count, so a caller passing large buffers could silently emit a frame whose
-/// length byte disagreed with its contents.
+/// Reachable because `bulk_read_write` does not bound its motor count.
 #[test]
 fn a_parameter_block_too_large_to_describe_is_refused() {
     const WRITE_REGISTERS: [StatusRegister; 15] = [StatusRegister::GoalPos; 15];
@@ -201,17 +193,12 @@ fn a_parameter_block_too_large_to_describe_is_refused() {
 }
 
 /// The default buffers have to carry the largest reply the protocol allows.
-///
-/// These are facts about the wire format rather than about any run, so they are
-/// asserted at compile time: a change that breaks one should fail the build.
 #[test]
 fn max_packet_size_covers_every_legal_frame() {
-    // The firmware's config table is 31 addressable registers, so a reply
-    // reading all of them carries 31 four-byte words plus six bytes of framing.
+    // 31 addressable config registers, four bytes each, plus six of framing.
     const CONFIG_TABLE_REGISTERS: usize = 31;
     const FULL_CONFIG_REPLY: usize = CONFIG_TABLE_REGISTERS * 4 + 6;
 
-    // LEN counts the instruction/error byte and the checksum.
     const { assert!(MAX_PARAMETER_COUNT == 253) };
     const { assert!(MAX_PACKET_SIZE == 259) };
 
@@ -219,6 +206,6 @@ fn max_packet_size_covers_every_legal_frame() {
     const { assert!(FULL_CONFIG_REPLY == 130) };
     const { assert!(FULL_CONFIG_REPLY <= MAX_PACKET_SIZE) };
 
-    // Writing that same table in one packet is larger again: index plus value.
+    // A write of the same table is larger again: index plus value.
     const { assert!(CONFIG_TABLE_REGISTERS * 5 + 6 <= MAX_PACKET_SIZE) };
 }
