@@ -302,31 +302,31 @@ impl<'a> Packet<&'a [u8]> {
 
         let kind = match instruction {
             x if x == Instruction::Ping as u8 => {
-                exact(parameters, 0)?;
+                check_exact_count(parameters, 0)?;
                 PacketKind::Ping
             },
             x if x == Instruction::SaveCfg as u8 => {
-                exact(parameters, 0)?;
+                check_exact_count(parameters, 0)?;
                 PacketKind::SaveCfg
             },
             x if x == Instruction::ReadStat as u8 => {
-                registers(parameters)?;
+                check_register_count(parameters)?;
                 PacketKind::ReadStat { registers: parameters }
             },
             x if x == Instruction::ReadCfg as u8 => {
-                registers(parameters)?;
+                check_register_count(parameters)?;
                 PacketKind::ReadCfg { registers: parameters }
             },
             x if x == Instruction::WriteStat as u8 => {
-                writes(parameters)?;
+                check_write_entries(parameters)?;
                 PacketKind::WriteStat { parameters }
             },
             x if x == Instruction::WriteCfg as u8 => {
-                writes(parameters)?;
+                check_write_entries(parameters)?;
                 PacketKind::WriteCfg { parameters }
             },
             x if x == Instruction::SetAbsPos as u8 => {
-                exact(parameters, 2 * REGISTER_BYTES)?;
+                check_exact_count(parameters, 2 * REGISTER_BYTES)?;
                 PacketKind::SetAbsPos {
                     // Lengths are checked above, so neither slice can fail.
                     theta: f32::from_le_bytes(parameters[..4].try_into().unwrap_or_default()),
@@ -650,8 +650,8 @@ impl ExactSizeIterator for BulkCommEntries<'_> {
     }
 }
 
-/// Require an exact parameter count.
-fn exact(parameters: &[u8], expected: usize) -> Result<(), InvalidMessage> {
+/// Check a parameter block against an exact byte count.
+fn check_exact_count(parameters: &[u8], expected: usize) -> Result<(), InvalidMessage> {
     if parameters.len() == expected {
         Ok(())
     } else {
@@ -663,9 +663,9 @@ fn exact(parameters: &[u8], expected: usize) -> Result<(), InvalidMessage> {
     }
 }
 
-/// A read instruction carries one byte per register, asks for at least one, and
-/// cannot ask for more than [`MAX_READ_REGISTERS`].
-fn registers(parameters: &[u8]) -> Result<(), InvalidMessage> {
+/// Check a read instruction's register list: one byte per register, at least
+/// one, and no more than [`MAX_READ_REGISTERS`].
+fn check_register_count(parameters: &[u8]) -> Result<(), InvalidMessage> {
     if parameters.is_empty() {
         return Err(InvalidParameterCount {
             actual: 0,
@@ -683,8 +683,9 @@ fn registers(parameters: &[u8]) -> Result<(), InvalidMessage> {
     Ok(())
 }
 
-/// A write instruction carries a whole number of index-plus-value entries.
-fn writes(parameters: &[u8]) -> Result<(), InvalidMessage> {
+/// Check a write instruction's parameter block: a whole number of
+/// index-plus-value entries, and at least one.
+fn check_write_entries(parameters: &[u8]) -> Result<(), InvalidMessage> {
     if parameters.is_empty() || !parameters.len().is_multiple_of(WRITE_STRIDE) {
         return Err(InvalidParameterCount {
             actual: parameters.len(),
