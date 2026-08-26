@@ -7,10 +7,11 @@
 //! What a device is responsible for beyond framing:
 //!
 //! - **Answering only what it should.** Serve packets addressed to one of your
-//!   IDs, plus [`BROADCAST_ID`], and ignore the rest. Note the bus is
-//!   half-duplex and you will also see other motors' replies; those arrive as
-//!   [`PacketKind::Status`] and are not addressed to you. [`Packet::addresses`]
-//!   is that filter.
+//!   IDs, plus [`Instruction::BulkComm`](crate::Instruction::BulkComm) on
+//!   [`BROADCAST_ID`]; [`Packet::addresses`] is that filter. Check
+//!   [`PacketKind::Status`] before it: the bus is half-duplex, so you also see
+//!   other motors' replies, and those are addressed to nobody but are what
+//!   drives bulk ordering.
 //!
 //! [`PacketKind::Status`]: crate::PacketKind::Status
 //! [`Packet::addresses`]: crate::Packet::addresses
@@ -29,12 +30,23 @@
 //! first with [`Packet::copy_into`]:
 //!
 //! ```text
-//! let mut scratch = [0u8; ConfigRegister::COUNT];
+//! let mut scratch = [0u8; MAX_PARAMETER_COUNT];
 //! loop {
 //!     let packet = device.read(timeout)?.copy_into(&mut scratch)?;
+//!
+//!     // Another motor's reply. `addresses` returns false for these, so the
+//!     // filter below would drop the packets bulk ordering waits on.
+//!     if let PacketKind::Status { .. } = packet.kind {
+//!         if predecessor == Some(packet.id) {
+//!             // Our turn: send the reply prepared when the bulk packet arrived.
+//!         }
+//!         continue;
+//!     }
+//!
 //!     if !packet.addresses(my_id) {
 //!         continue;
 //!     }
+//!
 //!     if let PacketKind::ReadStat { registers } = packet.kind {
 //!         device.write_status(my_id, ErrorFlags::empty(), registers.len() * 4, |out| {
 //!             for (slot, register) in out.chunks_exact_mut(4).zip(registers) {
@@ -45,6 +57,10 @@
 //!     }
 //! }
 //! ```
+//!
+//! `predecessor` is [`BulkComm::predecessor`] for your position in the last
+//! bulk packet. Size `scratch` for the traffic you serve;
+//! [`MAX_PARAMETER_COUNT`] covers every legal packet.
 //!
 //! A device that only decides whether a packet concerns it never needs the
 //! copy, which is why `read` does not make it for you. `tests/device.rs` has
@@ -64,7 +80,7 @@ use super::Bus;
 use super::bus::DefaultBuffer;
 
 #[cfg(doc)]
-use crate::{BulkComm, MAX_PACKET_SIZE};
+use crate::{BulkComm, MAX_PACKET_SIZE, MAX_PARAMETER_COUNT};
 
 /// A device on a BEAR bus: something a client sends instructions to.
 ///
