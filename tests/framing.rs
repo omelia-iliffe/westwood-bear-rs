@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use ww_bear::error::{TransferError, WriteError};
-use ww_bear::{BulkWriteData, Bus, MAX_PACKET_SIZE, MAX_PARAMETER_COUNT, SerialPort, StatusRegister};
+use ww_bear::{BulkWriteData, Bus, ConfigRegister, MAX_PACKET_SIZE, MAX_PARAMETER_COUNT, SerialPort, StatusRegister};
 
 /// A fake serial port that records written bytes and serves scripted bytes to reads.
 struct MockPort {
@@ -195,8 +195,8 @@ fn a_parameter_block_too_large_to_describe_is_refused() {
 /// The default buffers have to carry the largest reply the protocol allows.
 #[test]
 fn max_packet_size_covers_every_legal_frame() {
-    // 31 addressable config registers, four bytes each, plus six of framing.
-    const CONFIG_TABLE_REGISTERS: usize = 31;
+    // Four bytes per register, plus six of framing.
+    const CONFIG_TABLE_REGISTERS: usize = ConfigRegister::COUNT;
     const FULL_CONFIG_REPLY: usize = CONFIG_TABLE_REGISTERS * 4 + 6;
 
     const { assert!(MAX_PARAMETER_COUNT == 253) };

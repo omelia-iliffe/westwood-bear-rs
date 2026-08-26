@@ -22,6 +22,32 @@ where
             Ok(())
         }).await
     }
+    /// Write a status register by raw index. See [`Self::read_status_raw`].
+    ///
+    /// `data` is the encoded value: 4 little-endian bytes, `f32` or `u32`
+    /// according to the register. Nothing acknowledges a write on this protocol,
+    /// so read the register back if you need to know it landed.
+    ///
+    /// [`Self::read_status_raw`]: crate::Bus::read_status_raw
+    pub async fn write_status_raw(
+        &mut self,
+        motor_id: u8,
+        register: u8,
+        data: &[u8],
+    ) -> Result<(), WriteError<SerialPort::Error>> {
+        self.write_raw(motor_id, Instruction::WriteStat as u8, register, data).await
+    }
+
+    /// Write a config register by raw index. See [`Self::write_status_raw`].
+    pub async fn write_config_raw(
+        &mut self,
+        motor_id: u8,
+        register: u8,
+        data: &[u8],
+    ) -> Result<(), WriteError<SerialPort::Error>> {
+        self.write_raw(motor_id, Instruction::WriteCfg as u8, register, data).await
+    }
+
     /// Write a [`ConfigRegister`] to a specific motor
     ///
     /// The data parameter is an encoded byte slice. Encoding is either a f32 or u32 depending on the register.

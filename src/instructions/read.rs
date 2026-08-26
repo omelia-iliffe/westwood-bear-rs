@@ -21,6 +21,33 @@ where
         }).await
     }
 
+    /// Read a status register by raw index.
+    ///
+    /// [`Self::read_status`] takes a [`StatusRegister`], which covers the
+    /// standard table. A register index is a full byte on the wire, though, and
+    /// a device may implement vendor registers above that table -- the enum is
+    /// `#[non_exhaustive]` precisely because it does not claim to be the whole
+    /// address space. This is how a client reaches them.
+    ///
+    /// The device decides what is valid: an index it does not implement gets no
+    /// reply, which surfaces here as a timeout.
+    pub async fn read_status_raw(
+        &mut self,
+        motor_id: u8,
+        register: u8,
+    ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
+        self.read_raw(motor_id, StatusRegister::READ_INST, register).await
+    }
+
+    /// Read a config register by raw index. See [`Self::read_status_raw`].
+    pub async fn read_config_raw(
+        &mut self,
+        motor_id: u8,
+        register: u8,
+    ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
+        self.read_raw(motor_id, ConfigRegister::READ_INST, register).await
+    }
+
     /// Read a [`ConfigRegister`] from a specific motor
     pub async fn read_config(
         &mut self,

@@ -1,8 +1,8 @@
 use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
+use crate::log::{Hex, debug, trace};
 use crate::protocol::{MAX_PACKET_SIZE, PACKET_ERROR, PACKET_ID, PACKET_LEN, Response};
 use crate::{ErrorFlags, checksum};
 use core::time::Duration;
-use log::{debug, trace};
 
 /// Default buffer type.
 ///
@@ -188,9 +188,15 @@ where
     }
 
     /// Set the baud rate of the underlying serial port.
+    ///
+    /// Anything already buffered was sampled at the old rate, so it is dropped:
+    /// framing those bytes afterwards would hand the caller a packet assembled
+    /// from two different signalling rates, and a surviving `FF FF` pair is
+    /// enough to make that garbage look like a real header.
     pub fn set_baud_rate(&mut self, baud_rate: u32) -> Result<(), SerialPort::Error> {
         self.serial_port.set_baud_rate(baud_rate)?;
         self.baud_rate = baud_rate;
+        self.discard_read_buffer()?;
         Ok(())
     }
 
@@ -281,6 +287,33 @@ where
     where
         F: FnOnce(&mut [u8]) -> Result<(), crate::error::BufferTooSmallError>,
     {
+        // Throw away old data in the read buffer and the kernel read buffer.
+        // We don't do this when reading a reply, because we might receive multiple replies for one instruction,
+        // and read() can potentially read more than one reply per syscall.
+        // Done first so the two functions differ by exactly this discard.
+        self.discard_read_buffer().map_err(WriteError::DiscardBuffer)?;
+        self.send_packet(packet_id, instruction_id, parameter_count, encode_parameters)
+            .await
+    }
+
+    /// Build a packet into the write buffer and send it, leaving the read buffer alone.
+    ///
+    /// Split out of [`Self::write_packet`] for the device side. A client discards
+    /// pending input first, because anything already buffered predates the
+    /// instruction it is about to send and can only desynchronise the reply. A
+    /// device must not: while it waits its turn in a bulk read it is watching for
+    /// the packets of the motors ahead of it, and discarding on send would throw
+    /// away a predecessor's reply that arrived while its own was being built.
+    pub(crate) async fn send_packet<F>(
+        &mut self,
+        packet_id: u8,
+        instruction_id: u8,
+        parameter_count: usize,
+        encode_parameters: F,
+    ) -> Result<(), WriteError<SerialPort::Error>>
+    where
+        F: FnOnce(&mut [u8]) -> Result<(), crate::error::BufferTooSmallError>,
+    {
         let packet_len = Self::make_packet(
             self.write_buffer.as_mut(),
             packet_id,
@@ -288,16 +321,14 @@ where
             parameter_count,
             encode_parameters,
         )?;
-        // Throw away old data in the read buffer and the kernel read buffer.
-        // We don't do this when reading a reply, because we might receive multiple replies for one instruction,
-        // and read() can potentially read more than one reply per syscall.
-        self.discard_read_buffer().map_err(WriteError::DiscardBuffer)?;
+        self.send_buffered_packet(packet_len).await
+    }
 
+    async fn send_buffered_packet(&mut self, packet_len: usize) -> Result<(), WriteError<SerialPort::Error>> {
         let packet = &self.write_buffer.as_ref()[..packet_len];
-        trace!("sending packet: {:02X?}", packet);
+        trace!("sending packet: {}", Hex(packet));
         self.serial_port.write_all(packet).await.map_err(WriteError::Write)?;
         Ok(())
-        // self.write_packet_raw(&self.write_buffer.as_ref()[..packet_len])
     }
 
     pub(crate) async fn read_response(
@@ -323,7 +354,7 @@ where
     }
 
     /// returns a packet including header + parameters
-    async fn read_packet_deadline(
+    pub(crate) async fn read_packet_deadline(
         &mut self,
         deadline: SerialPort::Instant,
     ) -> Result<&[u8], ReadError<SerialPort::Error>> {
@@ -362,11 +393,14 @@ where
             }
 
             self.read_len += new_data;
+            // Not a buffer dump: a `Device` sits in this loop continuously, and
+            // the completed frame is logged once below anyway.
+            trace!("read {} bytes, {} buffered", new_data, self.read_len);
         };
 
         let buffer = self.read_buffer.as_ref();
         let parameters_end = message_len - 1;
-        trace!("read packet: {:02X?}", &buffer[..parameters_end]);
+        trace!("read packet: {}", Hex(&buffer[..parameters_end]));
 
         let checksum_message = buffer[parameters_end];
         let checksum_computed = checksum::calculate_checksum(&buffer[2..parameters_end]);
@@ -394,8 +428,8 @@ where
             debug!("skipping {} bytes of leading garbage.", garbage_len);
             // `garbage_len` counts from `used_bytes`, not from 0.
             trace!(
-                "skipped garbage: {:02X?}",
-                &read_buffer[self.used_bytes..][..garbage_len]
+                "skipped garbage: {}",
+                Hex(&read_buffer[self.used_bytes..][..garbage_len])
             );
         }
         self.consume_read_bytes(self.used_bytes + garbage_len);

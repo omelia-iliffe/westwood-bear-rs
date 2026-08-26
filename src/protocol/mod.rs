@@ -2,6 +2,11 @@ pub mod registers;
 
 use derive_more::Display;
 pub use registers::Register;
+mod instruction;
+pub use instruction::{
+    BROADCAST_ID, BulkComm, BulkCommEntries, BulkCommEntry, Packet, PacketKind, RegisterWrite, RegisterWrites,
+    STATUS_FLAG, register_writes,
+};
 mod motor_error;
 pub use motor_error::ErrorFlags;
 pub use motor_error::{ERROR_FLAGS, WARNING_FLAGS};
@@ -127,6 +132,14 @@ pub enum ConfigRegister {
 impl ConfigRegister {
     pub(crate) const READ_INST: u8 = Instruction::ReadCfg as u8;
     pub(crate) const WRITE_INST: u8 = Instruction::WriteCfg as u8;
+
+    /// Size of the motor's config table, in registers.
+    ///
+    /// The number of addressable indices, not the number of variants above: the
+    /// firmware bounds-checks a read against its whole table and answers any
+    /// index below this, including `0x1D`, which is reserved and has no variant
+    /// here. A device emulating a motor has to accept the same range.
+    pub const COUNT: usize = 31;
 }
 
 /// Status Registers
@@ -168,4 +181,12 @@ pub enum StatusRegister {
 impl StatusRegister {
     pub(crate) const READ_INST: u8 = Instruction::ReadStat as u8;
     pub(crate) const WRITE_INST: u8 = Instruction::WriteStat as u8;
+
+    /// Size of the motor's status table, in registers.
+    ///
+    /// The number of addressable indices, not the number of variants above.
+    /// `0x0E` and `0x0F` have no variant here because they are not useful to a
+    /// client, but the firmware still answers them, so a device emulating a
+    /// motor has to accept the same range.
+    pub const COUNT: usize = 16;
 }
