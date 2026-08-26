@@ -126,6 +126,35 @@ fn a_corrupted_length_does_not_swallow_the_following_reply() {
     );
 }
 
+/// A `LEN` too small to describe a frame is refused, not indexed into.
+///
+/// Neither short frame is caught by the checksum: the byte `LEN` points at is
+/// one the checksum covers, so both validate exactly.
+#[test]
+fn a_length_too_small_to_frame_is_refused() {
+    let good = [0xAAu8, 0xAA, 0xAA, 0xAA];
+    // LEN=0: the checksum byte *is* the LEN byte. LEN=1: it is the instruction.
+    let mut wire = vec![0xFF, 0xFF, 0xFF, 0x00];
+    wire.extend_from_slice(&[0xFF, 0xFF, 0x00, 0x01, 0xFE]);
+    wire.extend_from_slice(&status_packet(3, &good));
+
+    let mut bus = open_with(wire, 128);
+    let got = bulk_read_outcomes(&mut bus, &[1, 2, 3]);
+
+    assert_eq!(got.len(), 3);
+    for (i, outcome) in got[..2].iter().enumerate() {
+        assert!(
+            outcome.as_ref().unwrap_err().contains("InvalidParameterCount"),
+            "short frame {i} should be refused, got {outcome:?}"
+        );
+    }
+    assert_eq!(
+        got[2],
+        Ok((3, good.to_vec())),
+        "motor 3's reply was consumed along with the short frames"
+    );
+}
+
 /// A frame too large for the read buffer is dropped, not retried forever.
 #[test]
 fn an_oversize_reply_does_not_wedge_the_reader() {

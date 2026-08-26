@@ -20,6 +20,10 @@ pub type DefaultBuffer = &'static mut [u8];
 
 const HEADER_PREFIX: [u8; 2] = [0xFF, 0xFF];
 const HEADER_SIZE: usize = 4;
+
+/// The smallest body `LEN` can claim: it counts the instruction/error byte and
+/// the checksum, so two is a frame with no parameters.
+const MIN_BODY_LEN: usize = 2;
 // PACKET
 // | HEADER    | ID | LEN | INST | ADDR | PARAM        | CRC |
 // | 255, 255  | 2  | 7   | 3    | 5    | 0, 0, 48, 65 | 125 |
@@ -359,7 +363,7 @@ where
         deadline: SerialPort::Instant,
     ) -> Result<&[u8], ReadError<SerialPort::Error>> {
         // Check that the read buffer is large enough to hold atleast a instruction packet with 0 parameters.
-        crate::error::BufferTooSmallError::check(HEADER_SIZE + 2, self.read_buffer.as_mut().len())?; //todo check size is correct
+        crate::error::BufferTooSmallError::check(HEADER_SIZE + MIN_BODY_LEN, self.read_buffer.as_mut().len())?;
 
         let message_len = loop {
             self.remove_garbage();
@@ -369,6 +373,18 @@ where
             if self.read_len > HEADER_SIZE {
                 let body_len = self.read_buffer.as_ref()[PACKET_LEN] as usize;
                 let buffer_len = self.read_buffer.as_ref().len();
+
+                // Too small to be a frame, and the checksum does not catch it:
+                // in `FF FF FF 00` the byte it points at is the `LEN` byte.
+                if body_len < MIN_BODY_LEN {
+                    // Resync from the header: `body_len` is not trustworthy.
+                    self.consume_read_bytes(HEADER_PREFIX.len());
+                    return Err(crate::error::InvalidParameterCount {
+                        actual: body_len,
+                        expected: crate::error::ExpectedCount::Min(MIN_BODY_LEN),
+                    }
+                    .into());
+                }
 
                 // Check if the read buffer is large enough for the entire message.
                 // We don't have to remove the read bytes, because `write_instruction()` already clears the read buffer.
