@@ -160,6 +160,23 @@ fn read_config_roundtrip() {
 }
 
 #[test]
+fn read_config_raw_index_roundtrip() {
+    // `0x1D` is reserved: in range for the table, but with no `ConfigRegister`
+    // variant. A bare `u8` is how a client reaches it.
+    roundtrip(
+        |bus| {
+            let _ = bus.read_config(3, 0x1D);
+        },
+        |_, packet| {
+            let PacketKind::ReadCfg { registers } = packet.kind else {
+                panic!("expected ReadCfg, got {:?}", packet.kind)
+            };
+            assert_eq!(registers, &[0x1D]);
+        },
+    );
+}
+
+#[test]
 fn write_status_roundtrip() {
     roundtrip(
         |bus| {
@@ -191,6 +208,24 @@ fn write_config_roundtrip() {
             let writes: Vec<_> = register_writes(parameters).collect();
             assert_eq!(writes[0].register, ConfigRegister::Id as u8);
             assert_eq!(writes[0].u32(), 12);
+        },
+    );
+}
+
+#[test]
+fn write_status_raw_index_roundtrip() {
+    // `0x0E` has no `StatusRegister` variant, but the firmware answers it.
+    roundtrip(
+        |bus| {
+            let _ = bus.write_status(9, 0x0E, &2.5f32.to_le_bytes());
+        },
+        |_, packet| {
+            let PacketKind::WriteStat { parameters } = packet.kind else {
+                panic!("expected WriteStat, got {:?}", packet.kind)
+            };
+            let writes: Vec<_> = register_writes(parameters).collect();
+            assert_eq!(writes[0].register, 0x0E);
+            assert_eq!(writes[0].f32(), 2.5);
         },
     );
 }

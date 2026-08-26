@@ -142,6 +142,41 @@ impl ConfigRegister {
     pub const COUNT: usize = 31;
 }
 
+/// A config table index, as it appears on the wire.
+///
+/// [`Bus::read_config`] and [`Bus::write_config`] take `impl Into<ConfigAddr>`:
+/// a [`ConfigRegister`] covers the standard table, and a `u8` reaches anything
+/// else. A register index is a full byte on the wire, and a device may
+/// implement vendor registers above the standard table -- [`ConfigRegister`] is
+/// `#[non_exhaustive]` precisely because it does not claim to be the whole
+/// address space.
+///
+/// The device decides what is valid: an index it does not implement gets no
+/// reply, which surfaces as a timeout.
+///
+/// The wrapper is what keeps a [`StatusRegister`] out of a config call:
+/// `bus.read_config(id, 0x1D)` reaches a reserved index, while
+/// `bus.read_config(id, StatusRegister::PresentPos)` does not compile.
+///
+/// [`Bus::read_config`]: crate::Bus::read_config
+/// [`Bus::write_config`]: crate::Bus::write_config
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("{_0:#04x}")]
+pub struct ConfigAddr(pub u8);
+
+impl From<ConfigRegister> for ConfigAddr {
+    fn from(register: ConfigRegister) -> Self {
+        Self(register as u8)
+    }
+}
+
+impl From<u8> for ConfigAddr {
+    fn from(index: u8) -> Self {
+        Self(index)
+    }
+}
+
 /// Status Registers
 #[derive(Debug, Clone, Copy, strum::EnumIter, PartialEq, Eq, PartialOrd, Ord, Display)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -189,4 +224,30 @@ impl StatusRegister {
     /// client, but the firmware still answers them, so a device emulating a
     /// motor has to accept the same range.
     pub const COUNT: usize = 16;
+}
+
+/// A status table index, as it appears on the wire.
+///
+/// The status-table counterpart of [`ConfigAddr`]: [`Bus::read_status`] and
+/// [`Bus::write_status`] take `impl Into<StatusAddr>`, so a [`StatusRegister`]
+/// covers the standard table and a `u8` reaches any other index the device
+/// implements.
+///
+/// [`Bus::read_status`]: crate::Bus::read_status
+/// [`Bus::write_status`]: crate::Bus::write_status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("{_0:#04x}")]
+pub struct StatusAddr(pub u8);
+
+impl From<StatusRegister> for StatusAddr {
+    fn from(register: StatusRegister) -> Self {
+        Self(register as u8)
+    }
+}
+
+impl From<u8> for StatusAddr {
+    fn from(index: u8) -> Self {
+        Self(index)
+    }
 }
