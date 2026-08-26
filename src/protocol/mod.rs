@@ -15,6 +15,21 @@ pub(crate) const PACKET_ID: usize = 2;
 pub(crate) const PACKET_LEN: usize = 3;
 pub(crate) const PACKET_ERROR: usize = 4;
 
+/// Bytes per register value on the wire (4 little-endian bytes).
+pub(crate) const REGISTER_BYTES: usize = 4;
+
+/// The largest parameter block a frame can carry, in bytes.
+///
+/// `LEN` is one byte and counts the instruction/error byte and the checksum.
+pub const MAX_PARAMETER_COUNT: usize = u8::MAX as usize - 2;
+
+/// The largest frame the protocol can describe, in bytes.
+///
+/// `FF FF | id | len | inst | parameters | checksum` with a full parameter
+/// block. Smaller buffers cannot carry every legal frame: reading all 31 config
+/// registers replies with 130 bytes, and writing them sends 161.
+pub const MAX_PACKET_SIZE: usize = PACKET_ERROR + 1 + MAX_PARAMETER_COUNT + 1;
+
 /// The instructions supported by the BEAR protocol.
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

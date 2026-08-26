@@ -1,5 +1,5 @@
 use crate::error::{BufferTooSmallError, ReadError, TransferError, WriteError};
-use crate::protocol::{PACKET_ERROR, PACKET_ID, PACKET_LEN, Response};
+use crate::protocol::{MAX_PACKET_SIZE, PACKET_ERROR, PACKET_ID, PACKET_LEN, Response};
 use crate::{ErrorFlags, checksum};
 use core::time::Duration;
 use log::{debug, trace};
@@ -78,11 +78,17 @@ macro_rules! make_serial2_bus_impls {
         impl Bus<$DefaultSerialPort, Vec<u8>> {
             /// Open a serial port with the given baud rate.
             ///
-            /// This will allocate a new read and write buffer of 128 bytes each.
+            /// This will allocate a read and write buffer of [`MAX_PACKET_SIZE`] bytes each,
+            /// which is large enough for every frame the protocol can describe.
             /// Use [`Self::open_with_buffers()`] if you want to use a custom buffers.
             pub fn open(path: impl AsRef<std::path::Path>, baud_rate: u32) -> std::io::Result<Self> {
                 let serial_port = <$DefaultSerialPort>::open(path, baud_rate)?;
-                let bus = Bus::with_buffers_and_baud_rate(serial_port, vec![0; 128], vec![0; 128], baud_rate);
+                let bus = Bus::with_buffers_and_baud_rate(
+                    serial_port,
+                    vec![0; MAX_PACKET_SIZE],
+                    vec![0; MAX_PACKET_SIZE],
+                    baud_rate,
+                );
                 Ok(bus)
             }
         }
@@ -90,9 +96,7 @@ macro_rules! make_serial2_bus_impls {
         where
             Buffer: AsRef<[u8]> + AsMut<[u8]>,
         {
-            /// Open a serial port with the given baud rate.
-            ///
-            /// This will allocate a new read and write buffer of 128 bytes each.
+            /// Open a serial port with the given baud rate, using pre-allocated buffers.
             pub fn open_with_buffers(
                 path: impl AsRef<std::path::Path>,
                 baud_rate: u32,
@@ -122,11 +126,16 @@ where
     /// The serial port must already be configured in raw mode with the correct baud rate,
     /// character size (8), parity (disabled) and stop bits (1).
     ///
-    /// This will allocate a new read and write buffer of 128 bytes each.
+    /// This will allocate a read and write buffer of [`MAX_PACKET_SIZE`] bytes
+    /// each, which is large enough for every frame the protocol can describe.
     /// Use [`Self::with_buffers()`] if you want to use a custom buffers.
     #[cfg(feature = "alloc")]
     pub fn new(serial_port: SerialPort) -> Result<Self, SerialPort::Error> {
-        Bus::with_buffers(serial_port, alloc::vec![0; 128], alloc::vec![0; 128])
+        Bus::with_buffers(
+            serial_port,
+            alloc::vec![0; MAX_PACKET_SIZE],
+            alloc::vec![0; MAX_PACKET_SIZE],
+        )
     }
 }
 #[super::bisync]
@@ -185,6 +194,13 @@ where
         Ok(())
     }
 
+    /// Drop everything buffered, in this crate and in the kernel.
+    fn discard_read_buffer(&mut self) -> Result<(), SerialPort::Error> {
+        self.read_len = 0;
+        self.used_bytes = 0;
+        self.serial_port.discard_input_buffer()
+    }
+
     /// Get a mutable reference to the SerialPort
     pub fn serial_port(&mut self) -> &mut SerialPort {
         &mut self.serial_port
@@ -234,6 +250,10 @@ where
     {
         let len = parameter_count + 2; // + CRC, INST
 
+        // Separate from the buffer check below: a big enough buffer does not make
+        // the frame legal, and `len as u8` would otherwise truncate in silence.
+        BufferTooSmallError::check(HEADER_SIZE + len, MAX_PACKET_SIZE)?;
+
         // Check if the buffer can hold the message.
         BufferTooSmallError::check(HEADER_SIZE + len, buffer.len())?;
 
@@ -268,15 +288,12 @@ where
             parameter_count,
             encode_parameters,
         )?;
-        let packet = &self.write_buffer.as_ref()[..packet_len];
         // Throw away old data in the read buffer and the kernel read buffer.
         // We don't do this when reading a reply, because we might receive multiple replies for one instruction,
         // and read() can potentially read more than one reply per syscall.
-        self.read_len = 0;
-        self.used_bytes = 0;
-        self.serial_port
-            .discard_input_buffer()
-            .map_err(WriteError::DiscardBuffer)?;
+        self.discard_read_buffer().map_err(WriteError::DiscardBuffer)?;
+
+        let packet = &self.write_buffer.as_ref()[..packet_len];
         trace!("sending packet: {:02X?}", packet);
         self.serial_port.write_all(packet).await.map_err(WriteError::Write)?;
         Ok(())
@@ -319,12 +336,15 @@ where
             // The call to remove_garbage() removes all leading bytes that don't match a packet header.
             // So if there's enough bytes left, it's a packet header.
             if self.read_len > HEADER_SIZE {
-                let read_buffer = &self.read_buffer.as_ref()[..self.read_len];
-                let body_len = read_buffer[PACKET_LEN] as usize;
+                let body_len = self.read_buffer.as_ref()[PACKET_LEN] as usize;
+                let buffer_len = self.read_buffer.as_ref().len();
 
                 // Check if the read buffer is large enough for the entire message.
                 // We don't have to remove the read bytes, because `write_instruction()` already clears the read buffer.
-                crate::error::BufferTooSmallError::check(HEADER_SIZE + body_len, self.read_buffer.as_mut().len())?;
+                crate::error::BufferTooSmallError::check(HEADER_SIZE + body_len, buffer_len).inspect_err(|_| {
+                    // Drop the header, or every later read refinds this frame.
+                    self.consume_read_bytes(HEADER_PREFIX.len());
+                })?;
 
                 if self.read_len >= HEADER_SIZE + body_len {
                     break HEADER_SIZE + body_len;
@@ -351,7 +371,9 @@ where
         let checksum_message = buffer[parameters_end];
         let checksum_computed = checksum::calculate_checksum(&buffer[2..parameters_end]);
         if checksum_message != checksum_computed {
-            self.consume_read_bytes(message_len);
+            // `message_len` came from the LEN byte of the frame that just failed
+            // validation, so resync from the header rather than trusting it.
+            self.consume_read_bytes(HEADER_PREFIX.len());
             return Err(crate::error::InvalidChecksum {
                 message: checksum_message,
                 computed: checksum_computed,
@@ -366,11 +388,15 @@ where
     }
     /// Remove leading garbage data from the read buffer.
     fn remove_garbage(&mut self) {
-        let read_buffer = self.read_buffer.as_mut();
+        let read_buffer = self.read_buffer.as_ref();
         let garbage_len = find_header(&read_buffer[..self.read_len][self.used_bytes..]);
         if garbage_len > 0 {
             debug!("skipping {} bytes of leading garbage.", garbage_len);
-            trace!("skipped garbage: {:02X?}", &read_buffer[..garbage_len]);
+            // `garbage_len` counts from `used_bytes`, not from 0.
+            trace!(
+                "skipped garbage: {:02X?}",
+                &read_buffer[self.used_bytes..][..garbage_len]
+            );
         }
         self.consume_read_bytes(self.used_bytes + garbage_len);
         debug_assert_eq!(self.used_bytes, 0);
