@@ -2,6 +2,11 @@ pub mod registers;
 
 use derive_more::Display;
 pub use registers::Register;
+mod instruction;
+pub use instruction::{
+    BROADCAST_ID, BulkComm, BulkCommEntries, BulkCommEntry, MAX_READ_REGISTERS, Packet, PacketKind, RegisterWrite,
+    RegisterWrites, STATUS_FLAG, register_writes,
+};
 mod motor_error;
 pub use motor_error::ErrorFlags;
 pub use motor_error::{ERROR_FLAGS, WARNING_FLAGS};
@@ -127,6 +132,49 @@ pub enum ConfigRegister {
 impl ConfigRegister {
     pub(crate) const READ_INST: u8 = Instruction::ReadCfg as u8;
     pub(crate) const WRITE_INST: u8 = Instruction::WriteCfg as u8;
+
+    /// Size of the motor's config table, in registers.
+    ///
+    /// The number of addressable indices, not the number of variants above: the
+    /// firmware bounds-checks a read against its whole table and answers any
+    /// index below this, including `0x1D`, which is reserved and has no variant
+    /// here. A device emulating a motor has to accept the same range.
+    pub const COUNT: usize = 31;
+}
+
+/// A config table index, as it appears on the wire.
+///
+/// [`Bus::read_config`] and [`Bus::write_config`] take `impl Into<ConfigAddr>`:
+/// a [`ConfigRegister`] covers the standard table, and a `u8` reaches anything
+/// else. A register index is a full byte on the wire, and a device may
+/// implement vendor registers above the standard table -- [`ConfigRegister`] is
+/// `#[non_exhaustive]` precisely because it does not claim to be the whole
+/// address space.
+///
+/// The device decides what is valid: an index it does not implement gets no
+/// reply, which surfaces as a timeout.
+///
+/// The wrapper is what keeps a [`StatusRegister`] out of a config call:
+/// `bus.read_config(id, 0x1D)` reaches a reserved index, while
+/// `bus.read_config(id, StatusRegister::PresentPos)` does not compile.
+///
+/// [`Bus::read_config`]: crate::Bus::read_config
+/// [`Bus::write_config`]: crate::Bus::write_config
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("{_0:#04x}")]
+pub struct ConfigAddr(pub u8);
+
+impl From<ConfigRegister> for ConfigAddr {
+    fn from(register: ConfigRegister) -> Self {
+        Self(register as u8)
+    }
+}
+
+impl From<u8> for ConfigAddr {
+    fn from(index: u8) -> Self {
+        Self(index)
+    }
 }
 
 /// Status Registers
@@ -168,4 +216,38 @@ pub enum StatusRegister {
 impl StatusRegister {
     pub(crate) const READ_INST: u8 = Instruction::ReadStat as u8;
     pub(crate) const WRITE_INST: u8 = Instruction::WriteStat as u8;
+
+    /// Size of the motor's status table, in registers.
+    ///
+    /// The number of addressable indices, not the number of variants above.
+    /// `0x0E` and `0x0F` have no variant here because they are not useful to a
+    /// client, but the firmware still answers them, so a device emulating a
+    /// motor has to accept the same range.
+    pub const COUNT: usize = 16;
+}
+
+/// A status table index, as it appears on the wire.
+///
+/// The status-table counterpart of [`ConfigAddr`]: [`Bus::read_status`] and
+/// [`Bus::write_status`] take `impl Into<StatusAddr>`, so a [`StatusRegister`]
+/// covers the standard table and a `u8` reaches any other index the device
+/// implements.
+///
+/// [`Bus::read_status`]: crate::Bus::read_status
+/// [`Bus::write_status`]: crate::Bus::write_status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("{_0:#04x}")]
+pub struct StatusAddr(pub u8);
+
+impl From<StatusRegister> for StatusAddr {
+    fn from(register: StatusRegister) -> Self {
+        Self(register as u8)
+    }
+}
+
+impl From<u8> for StatusAddr {
+    fn from(index: u8) -> Self {
+        Self(index)
+    }
 }

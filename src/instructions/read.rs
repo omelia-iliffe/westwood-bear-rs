@@ -1,7 +1,7 @@
 use super::super::Bus;
 use crate::error::TransferError;
 use crate::protocol::Response;
-use crate::{ConfigRegister, StatusRegister};
+use crate::{ConfigAddr, ConfigRegister, StatusAddr, StatusRegister};
 
 #[super::super::bisync]
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
@@ -21,22 +21,28 @@ where
         }).await
     }
 
-    /// Read a [`ConfigRegister`] from a specific motor
+    /// Read a config register from a specific motor.
+    ///
+    /// Takes a [`ConfigRegister`] for the standard table, or a `u8` for any
+    /// other index the device implements. See [`ConfigAddr`].
     pub async fn read_config(
         &mut self,
         motor_id: u8,
-        config_register: ConfigRegister,
+        register: impl Into<ConfigAddr>,
     ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
-        self.read_raw(motor_id, ConfigRegister::READ_INST, config_register as u8).await
+        self.read_raw(motor_id, ConfigRegister::READ_INST, register.into().0).await
     }
 
-    /// Read a [`StatusRegister`] from a specific motor
+    /// Read a status register from a specific motor.
+    ///
+    /// Takes a [`StatusRegister`] for the standard table, or a `u8` for any
+    /// other index the device implements. See [`StatusAddr`].
     pub async fn read_status(
         &mut self,
         motor_id: u8,
-        status_register: StatusRegister,
+        register: impl Into<StatusAddr>,
     ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
-        self.read_raw(motor_id, StatusRegister::READ_INST, status_register as u8).await
+        self.read_raw(motor_id, StatusRegister::READ_INST, register.into().0).await
     }
 
     /// Read a register from a specific motor.

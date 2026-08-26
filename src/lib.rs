@@ -20,6 +20,8 @@ mod protocol;
 pub use protocol::*;
 pub mod error;
 
+mod log;
+
 mod checksum;
 
 /// Asynchronous interface for bear motors
@@ -28,6 +30,8 @@ pub mod asynchronous {
     use bisync::asynchronous::*;
     mod bus;
     pub use bus::Bus;
+    mod device;
+    pub use device::Device;
     mod instructions;
     mod serial_port;
     pub use serial_port::SerialPort;
@@ -42,6 +46,8 @@ pub mod asynchronous {
 use bisync::synchronous::*;
 mod bus;
 pub use bus::Bus;
+mod device;
+pub use device::Device;
 mod instructions;
 mod serial_port;
 pub use serial_port::SerialPort;

@@ -16,10 +16,7 @@ use crate::error::{
     WriteError,
 };
 use crate::protocol::{REGISTER_BYTES, Response};
-use crate::{BulkWriteData, Instruction, StatusRegister};
-
-/// Broadcast ID used to address all motors with a bulk packet.
-const BROADCAST_ID: u8 = 0xFE;
+use crate::{BROADCAST_ID, BulkWriteData, Instruction, StatusRegister};
 
 /// Byte offset of the parameter section within a written packet: `FF FF`, id, len, instruction.
 const PACKET_PARAMS_START: usize = 5;

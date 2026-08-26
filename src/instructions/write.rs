@@ -1,7 +1,7 @@
 use super::super::Bus;
 use crate::error::WriteError;
 use crate::registers::WritableRegister;
-use crate::{ConfigRegister, Instruction, StatusRegister};
+use crate::{ConfigAddr, Instruction, StatusAddr};
 
 #[super::super::bisync]
 impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
@@ -22,27 +22,37 @@ where
             Ok(())
         }).await
     }
-    /// Write a [`ConfigRegister`] to a specific motor
+    /// Write a config register to a specific motor.
     ///
-    /// The data parameter is an encoded byte slice. Encoding is either a f32 or u32 depending on the register.
+    /// Takes a [`ConfigRegister`](crate::ConfigRegister) for the standard table,
+    /// or a `u8` for any other index the device implements. See [`ConfigAddr`].
+    ///
+    /// `data` is the encoded value: 4 little-endian bytes, `f32` or `u32`
+    /// according to the register. Nothing acknowledges a write on this protocol,
+    /// so read the register back if you need to know it landed.
     pub async fn write_config(
         &mut self,
         motor_id: u8,
-        config_register: ConfigRegister,
+        register: impl Into<ConfigAddr>,
         data: &[u8],
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, Instruction::WriteCfg as u8, config_register as u8, data).await   }
+        self.write_raw(motor_id, Instruction::WriteCfg as u8, register.into().0, data).await
+    }
 
-    /// Write a [`StatusRegister`] to a specific motor
+    /// Write a status register to a specific motor.
     ///
-    /// The data parameter is an encoded byte slice. Encoding is either a f32 or u32 depending on the register.
+    /// Takes a [`StatusRegister`](crate::StatusRegister) for the standard table,
+    /// or a `u8` for any other index the device implements. See [`StatusAddr`].
+    ///
+    /// `data` is encoded as for [`Self::write_config`].
     pub async fn write_status(
         &mut self,
         motor_id: u8,
-        status_register: StatusRegister,
+        register: impl Into<StatusAddr>,
         data: &[u8],
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, Instruction::WriteStat as u8, status_register as u8, data).await   }
+        self.write_raw(motor_id, Instruction::WriteStat as u8, register.into().0, data).await
+    }
 
     /// Write a register to a specific motor.
     ///
@@ -53,5 +63,6 @@ where
         motor_id: u8,
         data: R::Inner,
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, R::WRITE_INST, R::ADDRESS, &R::encode_bytes(data)).await   }
+        self.write_raw(motor_id, R::WRITE_INST, R::ADDRESS, &R::encode_bytes(data)).await
+    }
 }

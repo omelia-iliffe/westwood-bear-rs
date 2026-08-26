@@ -42,7 +42,7 @@ required-features = ["serial2-tokio"]
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
 serial2-tokio = { version = "0.1.19", optional = true }
-log = "0.4.25"
+log = { version = "0.4.25", optional = true }
 derive_more = { version = "2", default-features = false, features = [
   "from",
   "error",
@@ -57,6 +57,10 @@ bisync = "0.3.0"
 tokio = { version = "1.47.1", features = ["time"], optional = true }
 
 [dev-dependencies]
+# The examples call `log::` directly. The library's own `log` dependency is
+# optional (firmware targets use `defmt` and should not be made to carry a second
+# facade), so the examples name it here instead of forcing the feature on.
+log = "0.4.25"
 test-log = "0.2.17"
 env_logger = "0.11.6"
 tokio = { version = "1.47.1", features = [
@@ -71,7 +75,12 @@ clap = { version = "4.6.1", features = ["derive"] }
 [features]
 default = ["std", "serial2"]
 alloc = ["defmt?/alloc"]
-std = ["alloc"]
+# `log` rides with `std`: a hosted build has a logging facade available and the
+# examples and tests expect the library's own bus traffic on it. A `no_std`
+# firmware target gets neither unless it asks, so it is still free to take
+# `defmt` alone.
+std = ["alloc", "log"]
 defmt = ["dep:defmt"]
+log = ["dep:log"]
 serial2 = ["dep:serial2", "std"]
 serial2-tokio = ["std", "dep:serial2-tokio", "dep:tokio"]
