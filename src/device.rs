@@ -73,7 +73,7 @@ use crate::ErrorFlags;
 use crate::error::{ReadError, WriteError};
 use crate::protocol::{Packet, REGISTER_BYTES, STATUS_FLAG};
 use core::time::Duration;
-// `super`, not `crate`: `bisync` compiles this file into both the synchronous and
+// `super`, not `crate`: `bisync2` compiles this file into both the synchronous and
 // asynchronous trees, and each has its own `Bus` and `SerialPort`. Naming them
 // through `crate` would pin both trees to the synchronous pair.
 use super::Bus;
