@@ -27,7 +27,7 @@ mod checksum;
 /// Asynchronous interface for bear motors
 #[path = "."]
 pub mod asynchronous {
-    use bisync::asynchronous::*;
+    use bisync2::asynchronous::*;
     mod bus;
     pub use bus::Bus;
     mod device;
@@ -43,7 +43,7 @@ pub mod asynchronous {
 }
 
 // Synchronous interface exports
-use bisync::synchronous::*;
+use bisync2::synchronous::*;
 mod bus;
 pub use bus::Bus;
 mod device;
