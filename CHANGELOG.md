@@ -1,16 +1,18 @@
 # WW BEAR ChangeLog
 
-## [0.3.0] - 2026-08-05
+## [0.3.0] - 2026-09-02
 ### Features
 - Add bulk read/write support
 - Add f32/u32 encode/decode helpers and rename bulk_comm
 - [**breaking**] Decouple tokio from the serial2 backend (#3)
 - **(examples)** Add return-time-delay arg, remove setup-motor example
 - Validate bulk read replies by id and length
+- **(device)** Add the device half of the bus (#11)
 ### Bug Fixes
-- Remove dbg! usage, update readme, bump version
 - Reject bulk requests with too many registers; correct feature docs
 - [**breaking**] Remove unused `ErrorStatus` & `WarningStatus` registers
+- **(bus)** Recover framing correctly and refuse frames LEN cannot describe (#10)
+- **(deps)** Replace yanked bisync with bisync2
 ### Refactor
 - Pair motor ids with data instead of passing two parallel slices, deliver each bulk reply as a Result, add async bulk example
 - [**breaking**] Rename return_time_delay to response_timeout_padding
@@ -18,6 +20,10 @@
 - Remove setup_motor from examples table
 ### Styling
 - Pad packet ID in error messages to 0x0E form
+
+## [0.2.1] - 2026-05-25
+### Bug Fixes
+- Remove dbg! usage, update readme, bump version
 
 ## [0.2.0] - 2026-05-25
 ### Features
