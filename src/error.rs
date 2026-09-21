@@ -7,7 +7,7 @@ use derive_more::{Display, Error, From};
 #[derive(Debug, Display, Error, From)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum TransferError<E> {
-    /// The write of failed.
+    /// The write failed.
     #[from]
     WriteError(WriteError<E>),
 
@@ -20,8 +20,11 @@ pub enum TransferError<E> {
 #[derive(Debug, Display, Error, From)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum WriteError<E> {
-    /// The write buffer is too small to contain the whole stuffed message.
+    /// A parameter block did not fit the space the frame reserved for it.
     BufferTooSmall(BufferTooSmallError),
+
+    /// More parameter bytes than one `LEN` byte can count.
+    TooManyParameters(TooManyParametersError),
 
     /// A bulk request asked for more registers than the wire format can encode.
     TooManyRegisters(TooManyRegistersError),
@@ -61,10 +64,10 @@ impl TooManyRegistersError {
     }
 }
 
-/// The buffer is too small to hold the entire message.
+/// A destination slice is too small for the bytes being encoded into it.
 ///
-/// Consider increasing the size of the buffer.
-/// Keep in mind that the write buffer needs to be large enough to account for byte stuffing.
+/// Raised by a register encoder, or by a bulk row carrying fewer bytes than the registers it
+/// declares. Never by the bus's own frame buffers, which no legal frame exceeds.
 #[derive(Debug, Display, Error)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[display("buffer is too small: need {} bytes, but the size is {}", self.required_size, self.total_size)]
@@ -76,20 +79,50 @@ pub struct BufferTooSmallError {
     pub total_size: usize,
 }
 
+/// More parameter bytes than the one-byte `LEN` field can count.
+///
+/// `LEN` counts the instruction byte, the parameters and the checksum, so a parameter block
+/// cannot exceed [`MAX_PARAMETER_COUNT`](crate::MAX_PARAMETER_COUNT) however much buffer a
+/// caller supplies. The remedy is a smaller request: fewer motors in a bulk packet, or fewer
+/// registers per motor.
+#[derive(Debug, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("too many parameters: {} bytes, but LEN counts at most {}; send fewer motors or registers per packet", self.count, self.max)]
+pub struct TooManyParametersError {
+    /// The number of parameter bytes requested.
+    pub count: usize,
+
+    /// The maximum number of parameter bytes supported.
+    pub max: usize,
+}
+
+impl TooManyParametersError {
+    /// Check that a parameter block fits what `LEN` can count.
+    pub fn check(count: usize, max: usize) -> Result<(), Self> {
+        if count <= max {
+            Ok(())
+        } else {
+            Err(Self { count, max })
+        }
+    }
+}
+
 /// An error that can occur during a read transfer.
 #[derive(Debug, Display, Error, From)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ReadError<E> {
-    /// The read buffer is too small to contain the whole stuffed message.
-    #[from]
-    BufferFull(BufferTooSmallError),
-
     /// Failed to read from the serial port.
     #[from(skip)]
     Io(E),
 
     /// The received message is invalid.
-    #[from(InvalidMessage, InvalidChecksum, InvalidPacketId, InvalidParameterCount)]
+    #[from(
+        InvalidMessage,
+        InvalidChecksum,
+        InvalidPacketId,
+        InvalidParameterCount,
+        InvalidFrameLength
+    )]
     InvalidMessage(InvalidMessage),
 }
 
@@ -105,6 +138,25 @@ pub enum InvalidMessage {
 
     /// The message has an invalid parameter count.
     InvalidParameterCount(InvalidParameterCount),
+
+    /// The message's `LEN` byte is too small to describe a frame.
+    InvalidFrameLength(InvalidFrameLength),
+}
+
+/// A frame header was followed by a `LEN` byte too small to describe any frame.
+///
+/// `LEN` counts the instruction/error byte, the parameters and the checksum, so two is the
+/// smallest legal value. Less means the `FF FF` before it was not a header, and the checksum
+/// does not catch it: in `FF FF FF 00` the byte `LEN` points at is one the checksum covers.
+#[derive(Debug, Clone, Eq, PartialEq, Display, Error)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[display("corrupt frame: LEN byte is {}, but the smallest frame has LEN {}; resynced past the header", self.len, self.min)]
+pub struct InvalidFrameLength {
+    /// The length the `LEN` byte claimed.
+    pub len: usize,
+
+    /// The smallest length that can describe a frame.
+    pub min: usize,
 }
 
 /// The received message has an invalid checksum value.
@@ -112,7 +164,7 @@ pub enum InvalidMessage {
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[display("invalid checksum, message claims {:#02X}, computed {:#02X}", self.message, self.computed)]
 pub struct InvalidChecksum {
-    /// The checksum from the messsage.
+    /// The checksum from the message.
     pub message: u8,
 
     /// The actual checksum.

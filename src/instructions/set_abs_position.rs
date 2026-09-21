@@ -3,10 +3,9 @@ use crate::error::WriteError;
 use crate::protocol::Instruction;
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Reset the multiturn encoder (and clear the accosicated error) on a specific motor with a backup battery.
     /// If tolerance is non-zero, BEAR tries to find the multi-turn value to match the expected position within the tolerance.
