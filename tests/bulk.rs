@@ -82,8 +82,8 @@ fn status_packet(id: u8, error: u8, data: &[u8]) -> Vec<u8> {
     p
 }
 
-fn open(to_read: Vec<u8>) -> Bus<MockPort, Vec<u8>> {
-    Bus::<MockPort, Vec<u8>>::with_buffers(MockPort::new(to_read), vec![0u8; 128], vec![0u8; 128]).unwrap()
+fn open(to_read: Vec<u8>) -> Bus<MockPort> {
+    Bus::new(MockPort::new(to_read)).unwrap()
 }
 
 #[test]
@@ -244,7 +244,7 @@ fn bulk_read_rejects_too_many_registers() {
         Err(TransferError::WriteError(WriteError::TooManyRegisters(e))) => {
             assert_eq!(e.count, 16);
             assert_eq!(e.max, 15);
-        }
+        },
         other => panic!("expected TooManyRegisters error, got {other:?}"),
     }
     // Nothing should have been written to the wire.

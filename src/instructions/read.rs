@@ -4,10 +4,9 @@ use crate::protocol::Response;
 use crate::{ConfigAddr, ConfigRegister, StatusAddr, StatusRegister};
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     pub(crate) async fn read_raw(
         &mut self,

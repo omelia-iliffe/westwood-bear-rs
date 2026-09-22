@@ -4,10 +4,9 @@ use crate::registers::WritableRegister;
 use crate::{ConfigAddr, Instruction, StatusAddr};
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     pub(crate) async fn write_raw(
         &mut self,

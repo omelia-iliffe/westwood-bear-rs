@@ -1,13 +1,9 @@
 //! Device-side tests: what a motor sees when the client half of this crate talks.
 //!
-//! Almost every test here is a round trip. The client builds a real instruction,
-//! the bytes it put on the wire are handed straight to a [`Device`], and the
-//! decode is asserted. That closes the loop without hardware and without a
-//! hand-written byte script, so the two halves cannot drift apart: a change to
-//! the encoder that the decoder does not expect fails here.
-//!
-//! The exceptions are the fixed-vector tests, which pin the wire format itself
-//! against frames taken from the motor firmware rather than from this crate.
+//! Almost every test here is a round trip: the client builds a real instruction, the bytes
+//! it put on the wire are handed straight to a [`Device`], and the decode is asserted, so
+//! the two halves cannot drift apart. The exceptions are the fixed-vector tests, which pin
+//! the wire format itself against frames taken from the motor firmware.
 
 use std::time::Duration;
 
@@ -19,8 +15,7 @@ use ww_bear::{
 
 /// A fake serial port: records what is written, serves a fixed script to reads.
 ///
-/// `Instant = ()` because the deadline in [`SerialPort`] is fully abstract; the
-/// script either has bytes or it does not, so there is no clock to consult.
+/// `Instant = ()`: the script either has bytes or it does not, so there is no clock.
 struct MockPort {
     written: Vec<u8>,
     to_read: Vec<u8>,
@@ -77,9 +72,8 @@ impl SerialPort for MockPort {
 
 /// Build a well-formed frame by hand.
 ///
-/// The round-trip tests below drive the client instead, but the client only
-/// ever addresses one register at a time and never emits a malformed frame, so
-/// the multi-register and corruption cases have to be written out.
+/// The client only ever addresses one register at a time and never emits a malformed
+/// frame, so the multi-register and corruption cases have to be written out.
 fn frame(id: u8, instruction: u8, parameters: &[u8]) -> Vec<u8> {
     let mut wire = vec![0xFF, 0xFF, id, (parameters.len() + 2) as u8, instruction];
     wire.extend_from_slice(parameters);
@@ -88,19 +82,19 @@ fn frame(id: u8, instruction: u8, parameters: &[u8]) -> Vec<u8> {
     wire
 }
 
-fn client() -> Bus<MockPort, Vec<u8>> {
-    Bus::<MockPort, Vec<u8>>::with_buffers(MockPort::new(Vec::new()), vec![0u8; 256], vec![0u8; 256]).unwrap()
+fn client() -> Bus<MockPort> {
+    Bus::new(MockPort::new(Vec::new())).unwrap()
 }
 
-fn device(wire: Vec<u8>) -> Device<MockPort, Vec<u8>> {
-    Device::<MockPort, Vec<u8>>::with_buffers(MockPort::new(wire), vec![0u8; 256], vec![0u8; 256]).unwrap()
+fn device(wire: Vec<u8>) -> Device<MockPort> {
+    Device::new(MockPort::new(wire)).unwrap()
 }
 
 /// Run a client instruction, then decode the bytes it produced as a device would.
 ///
-/// The client's reply read is expected to fail (the mock has no script), which is
-/// fine: the request bytes are already on the wire by then.
-fn roundtrip(build: impl FnOnce(&mut Bus<MockPort, Vec<u8>>), check: impl FnOnce(&[u8], Packet<&[u8]>)) {
+/// The client's reply read is expected to fail — the mock has no script — but the request
+/// bytes are already on the wire by then.
+fn roundtrip(build: impl FnOnce(&mut Bus<MockPort>), check: impl FnOnce(&[u8], Packet<&[u8]>)) {
     let mut bus = client();
     build(&mut bus);
     let wire = bus.serial_port().written.clone();
@@ -118,9 +112,8 @@ fn ping_roundtrip() {
             let _ = bus.ping(7);
         },
         |wire, packet| {
-            // Fixed vector: the firmware's own hand-built ping is
-            // `FF FF | id | LEN=2 | INST=1 | ~sum(id..inst)`. LEN counts the
-            // instruction and the checksum, which is the classic off-by-one.
+            // Fixed vector: the firmware's own ping is
+            // `FF FF | id | LEN=2 | INST=1 | ~sum(id..inst)`, LEN counting instruction and checksum.
             assert_eq!(wire, &[0xFF, 0xFF, 0x07, 0x02, 0x01, !(0x07u8 + 0x02 + 0x01)]);
             assert_eq!(packet.id, 7);
             assert!(matches!(packet.kind, PacketKind::Ping));
@@ -269,8 +262,7 @@ fn bulk_read_eight_motors_roundtrip() {
             let _ = bus.bulk_read(&IDS, &[StatusRegister::PresentPos, StatusRegister::PresentIq], |_| {});
         },
         |_, packet| {
-            // Broadcast: every motor parses it, and each decides for itself
-            // whether it is listed.
+            // Broadcast: every motor parses it and decides for itself whether it is listed.
             assert_eq!(packet.id, 0xFE);
             let PacketKind::BulkComm { bulk } = packet.kind else {
                 panic!("expected BulkComm, got {:?}", packet.kind)
@@ -293,8 +285,7 @@ fn bulk_read_eight_motors_roundtrip() {
                 assert!(entry.write_data.is_empty(), "read-only bulk carries no write data");
             }
 
-            // The sequencing rule: position 0 leads, everyone else follows the
-            // previous ID in the list.
+            // The sequencing rule: position 0 leads, everyone else follows the previous ID.
             assert_eq!(bulk.predecessor(0), None);
             for i in 1..8 {
                 assert_eq!(bulk.predecessor(i), Some(IDS[i - 1]));
@@ -334,8 +325,8 @@ fn bulk_read_write_carries_per_motor_data() {
             };
             assert_eq!(bulk.write_registers(), &[StatusRegister::GoalPos as u8]);
 
-            // The entry carries the register list its data belongs to, so the
-            // pairing cannot be got wrong by passing the wrong slice back in.
+            // The entry carries the register list its data belongs to, so the pairing
+            // cannot be got wrong by passing the wrong slice back in.
             let goals: Vec<f32> = bulk
                 .entries()
                 .map(|entry| {
@@ -350,12 +341,12 @@ fn bulk_read_write_carries_per_motor_data() {
 
 /// A reply must never be mistaken for an instruction.
 ///
-/// This is the property bulk ordering rests on: byte 4 is the instruction in a
-/// request and the error byte in a reply, and only bit 7 separates them.
+/// The property bulk ordering rests on: byte 4 is the instruction in a request and the
+/// error byte in a reply, and only bit 7 separates them.
 #[test]
 fn status_packet_is_not_an_instruction() {
-    // `FF FF | id | len | err | data | csum` with the status flag set. The error
-    // byte here is 0x82, whose low bits collide with `ReadStat` (0x02).
+    // `FF FF | id | len | err | data | csum`, status flag set. The error byte 0x82 has low
+    // bits that collide with `ReadStat` (0x02).
     let mut wire = vec![0xFF, 0xFF, 0x0B, 0x06, 0x82, 0x00, 0x00, 0x80, 0x3F];
     let sum = wire[2..].iter().fold(0u8, |a, b| a.wrapping_add(*b));
     wire.push(255u8.wrapping_sub(sum));
@@ -403,8 +394,8 @@ fn addressing_accepts_own_id_and_broadcast() {
 
 /// Bulk is the only instruction the broadcast ID carries.
 ///
-/// A device that answered a broadcast of any other kind would transmit at the
-/// same moment as every other motor on the bus, and the replies would collide.
+/// A device answering any other broadcast would transmit at the same moment as every other
+/// motor on the bus, and the replies would collide.
 #[test]
 fn broadcast_addresses_nobody_except_for_bulk() {
     for instruction in [
@@ -434,9 +425,7 @@ fn broadcast_addresses_nobody_except_for_bulk() {
 
 /// The whole point of the device half: answer a read with data the request chose.
 ///
-/// The reply borrows nothing from the request only because [`Packet::copy_into`]
-/// detaches it first. Without that step this does not compile, which is exactly
-/// the failure this test exists to pin.
+/// Without [`Packet::copy_into`] detaching the request first, this does not compile.
 #[test]
 fn a_reply_can_be_built_from_the_request_it_answers() {
     const REGISTERS: [u8; 3] = [
@@ -471,7 +460,7 @@ fn a_reply_can_be_built_from_the_request_it_answers() {
 
     // And the client half decodes what came back, register for register.
     let reply = dev.serial_port().written.clone();
-    let mut bus = Bus::<MockPort, Vec<u8>>::with_buffers(MockPort::new(reply), vec![0u8; 256], vec![0u8; 256]).unwrap();
+    let mut bus = Bus::new(MockPort::new(reply)).unwrap();
     let response = bus.ping(7).expect("client rejected the device's reply");
     for (index, register) in REGISTERS.iter().enumerate() {
         assert_eq!(response.f32(index), Some(f32::from(*register) * 2.0));
@@ -498,10 +487,8 @@ fn into_owned_detaches_a_packet_from_the_read_buffer() {
 
 /// A frame whose length byte was corrupted must cost only that frame.
 ///
-/// The length used to resynchronise came from the frame that just failed its
-/// checksum, so trusting it let one line glitch swallow the next instruction as
-/// well. On a device, which reads the bus continuously, that is the difference
-/// between one dropped packet and two.
+/// Resynchronising on the failed frame's own length byte would let one line glitch swallow
+/// the next instruction too, which on a device reading continuously costs two packets.
 #[test]
 fn a_corrupted_length_does_not_swallow_the_following_frame() {
     let mut wire = frame(1, Instruction::Ping as u8, &[]);
@@ -521,40 +508,18 @@ fn a_corrupted_length_does_not_swallow_the_following_frame() {
     assert!(matches!(packet.kind, PacketKind::Ping));
 }
 
-/// A frame too large for the read buffer is dropped, not retried forever.
-#[test]
-fn an_oversize_frame_does_not_wedge_the_reader() {
-    let mut wire = frame(1, Instruction::WriteStat as u8, &[0u8; 40]);
-    wire.extend_from_slice(&frame(2, Instruction::Ping as u8, &[]));
-
-    let mut dev = Device::<MockPort, Vec<u8>>::with_buffers(MockPort::new(wire), vec![0u8; 32], vec![0u8; 32]).unwrap();
-
-    assert!(
-        matches!(dev.read(Duration::from_millis(1)), Err(ReadError::BufferFull(_))),
-        "a 46 byte frame should not fit a 32 byte buffer"
-    );
-
-    let packet = dev
-        .read(Duration::from_millis(1))
-        .expect("reader wedged on the frame it could not hold");
-    assert_eq!(packet.id, 2);
-}
-
 /// `LEN` is one byte, so an oversize parameter block cannot be framed at all.
 ///
-/// Truncating it would put a frame on the wire whose length byte disagrees with
-/// its contents: every receiver mis-frames it, fails the checksum, and then
-/// desynchronises on the remainder.
+/// Truncating it would put a frame on the wire whose length byte disagrees with its
+/// contents, desynchronising every receiver.
 #[test]
 fn a_parameter_block_too_large_to_describe_is_refused() {
-    let mut dev =
-        Device::<MockPort, Vec<u8>>::with_buffers(MockPort::new(Vec::new()), vec![0u8; 512], vec![0u8; 512]).unwrap();
+    let mut dev = Device::new(MockPort::new(Vec::new())).unwrap();
 
-    // A whole number of registers, and it fits the buffer. It still cannot be
-    // described: 256 + 2 does not fit in a byte.
+    // A whole number of registers, and it fits the buffer, but LEN counts at most 253.
     let result = dev.write_status_bytes(9, ErrorFlags::empty(), &[0xAA; 256]);
     assert!(
-        matches!(result, Err(WriteError::BufferTooSmall(_))),
+        matches!(result, Err(WriteError::TooManyParameters(_))),
         "expected a refusal, got {result:?}"
     );
     assert!(
@@ -651,7 +616,7 @@ fn client_parses_a_device_reply() {
         .unwrap();
     let wire = dev.serial_port().written.clone();
 
-    let mut bus = Bus::<MockPort, Vec<u8>>::with_buffers(MockPort::new(wire), vec![0u8; 128], vec![0u8; 128]).unwrap();
+    let mut bus = Bus::new(MockPort::new(wire)).unwrap();
     let response = bus.ping(12).expect("client rejected the device's reply");
 
     assert_eq!(response.motor_id, 12);
@@ -691,8 +656,8 @@ fn rejects_a_ping_carrying_parameters() {
 
 /// A read may name more registers than the standard table holds.
 ///
-/// The table is not the whole address space, so the count is bounded by what a
-/// reply can carry, not by `StatusRegister::COUNT`.
+/// The table is not the whole address space, so the count is bounded by what a reply can
+/// carry, not by `StatusRegister::COUNT`.
 #[test]
 fn a_read_past_the_standard_table_is_served() {
     let above_table: Vec<u8> = (0..20).collect();

@@ -3,10 +3,9 @@ use crate::error::WriteError;
 use crate::protocol::Instruction;
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Saves the config registers of a specific motor.
     ///
