@@ -39,6 +39,11 @@ name = "bulk_async"
 path = "examples/bulk_async.rs"
 required-features = ["serial2-tokio"]
 
+[[example]]
+name = "read_registers"
+path = "examples/read_registers.rs"
+required-features = ["serial2"]
+
 [dependencies]
 serial2 = { version = "0.2.28", optional = true }
 serial2-tokio = { version = "0.1.19", optional = true }
