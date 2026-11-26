@@ -1,5 +1,11 @@
 # WW BEAR ChangeLog
 
+## [0.4.0] - 2026-11-26
+### Features
+- **(examples)** Add read_registers example
+### Refactor
+- **(bus)** [**breaking**] Pin the frame buffers at MAX_PACKET_SIZE (#14)
+
 ## [0.3.0] - 2026-09-02
 ### Features
 - Add bulk read/write support
