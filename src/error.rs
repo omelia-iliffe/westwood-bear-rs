@@ -56,11 +56,7 @@ pub struct TooManyRegistersError {
 impl TooManyRegistersError {
     /// Check that a register count fits within the supported maximum.
     pub fn check(count: usize, max: usize) -> Result<(), Self> {
-        if count <= max {
-            Ok(())
-        } else {
-            Err(Self { count, max })
-        }
+        if count <= max { Ok(()) } else { Err(Self { count, max }) }
     }
 }
 
@@ -99,11 +95,7 @@ pub struct TooManyParametersError {
 impl TooManyParametersError {
     /// Check that a parameter block fits what `LEN` can count.
     pub fn check(count: usize, max: usize) -> Result<(), Self> {
-        if count <= max {
-            Ok(())
-        } else {
-            Err(Self { count, max })
-        }
+        if count <= max { Ok(()) } else { Err(Self { count, max }) }
     }
 }
 

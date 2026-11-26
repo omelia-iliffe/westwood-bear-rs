@@ -17,7 +17,8 @@ where
         self.transfer_single(motor_id, instruction_id, 1, 5, |buffer| {
             buffer[0] = addr;
             Ok(())
-        }).await
+        })
+        .await
     }
 
     /// Read a config register from a specific motor.
@@ -29,7 +30,8 @@ where
         motor_id: u8,
         register: impl Into<ConfigAddr>,
     ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
-        self.read_raw(motor_id, ConfigRegister::READ_INST, register.into().0).await
+        self.read_raw(motor_id, ConfigRegister::READ_INST, register.into().0)
+            .await
     }
 
     /// Read a status register from a specific motor.
@@ -41,7 +43,8 @@ where
         motor_id: u8,
         register: impl Into<StatusAddr>,
     ) -> Result<Response<&[u8]>, TransferError<SerialPort::Error>> {
-        self.read_raw(motor_id, StatusRegister::READ_INST, register.into().0).await
+        self.read_raw(motor_id, StatusRegister::READ_INST, register.into().0)
+            .await
     }
 
     /// Read a register from a specific motor.

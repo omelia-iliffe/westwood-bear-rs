@@ -32,7 +32,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connected to motor {}", args.id);
 
     bus.set_absolute_position(args.id, args.position, args.tolerance)?;
-    println!("Absolute position set to {:.4} rad (tolerance {:.4} rad)", args.position, args.tolerance);
+    println!(
+        "Absolute position set to {:.4} rad (tolerance {:.4} rad)",
+        args.position, args.tolerance
+    );
 
     let pos = bus.read_present_pos(args.id)?;
     println!("Present position: {:.4} rad", pos.data);
