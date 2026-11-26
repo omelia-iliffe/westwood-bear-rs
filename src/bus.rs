@@ -223,7 +223,7 @@ where
         F: FnOnce(&mut [u8]) -> Result<(), crate::error::BufferTooSmallError>,
     {
         let packet_len = Self::make_packet(
-            self.write_buffer.as_mut(),
+            &mut self.write_buffer,
             packet_id,
             instruction_id,
             parameter_count,
@@ -233,7 +233,7 @@ where
     }
 
     async fn send_buffered_packet(&mut self, packet_len: usize) -> Result<(), WriteError<SerialPort::Error>> {
-        let packet = &self.write_buffer.as_ref()[..packet_len];
+        let packet = &self.write_buffer[..packet_len];
         trace!("sending packet: {}", Hex(packet));
         self.serial_port.write_all(packet).await.map_err(WriteError::Write)?;
         Ok(())
@@ -292,7 +292,7 @@ where
 
             let new_data = self
                 .serial_port
-                .read(&mut self.read_buffer.as_mut()[self.read_len..], &deadline)
+                .read(&mut self.read_buffer[self.read_len..], &deadline)
                 .await
                 .map_err(ReadError::Io)?;
             if new_data == 0 {
@@ -304,7 +304,7 @@ where
             trace!("read {} bytes, {} buffered", new_data, self.read_len);
         };
 
-        let buffer = self.read_buffer.as_ref();
+        let buffer = &self.read_buffer;
         let parameters_end = message_len - 1;
         trace!("read packet: {}", Hex(&buffer[..parameters_end]));
 
@@ -322,12 +322,12 @@ where
 
         // Mark the message used, so the next `remove_garbage()` removes it.
         self.used_bytes += message_len;
-        let packet = &self.read_buffer.as_ref()[..parameters_end];
+        let packet = &self.read_buffer[..parameters_end];
         Ok(packet)
     }
     /// Remove leading garbage data from the read buffer.
     fn remove_garbage(&mut self) {
-        let read_buffer = self.read_buffer.as_ref();
+        let read_buffer = &self.read_buffer;
         let garbage_len = find_header(&read_buffer[..self.read_len][self.used_bytes..]);
         if garbage_len > 0 {
             debug!("skipping {} bytes of leading garbage.", garbage_len);
@@ -342,7 +342,7 @@ where
     }
     fn consume_read_bytes(&mut self, len: usize) {
         debug_assert!(len <= self.read_len);
-        self.read_buffer.as_mut().copy_within(len..self.read_len, 0);
+        self.read_buffer.copy_within(len..self.read_len, 0);
         // Consumed bytes may be garbage rather than used bytes, hence `saturating_sub`.
         self.used_bytes = self.used_bytes.saturating_sub(len);
         self.read_len -= len;
