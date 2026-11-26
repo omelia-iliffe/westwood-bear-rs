@@ -1,8 +1,7 @@
 //! Framing and resynchronisation tests against a mock serial port.
 //!
-//! Driven through `bulk_read`, which reads a reply per motor from one
-//! instruction: that is the only way to see the reader recover from a bad frame
-//! and still deliver the next one.
+//! Driven through `bulk_read`, the one instruction that reads a reply per motor, so the
+//! reader can be seen to recover from a bad frame and still deliver the next.
 
 use std::time::Duration;
 
@@ -83,13 +82,12 @@ fn status_packet(id: u8, data: &[u8]) -> Vec<u8> {
     packet
 }
 
-fn open_with(to_read: Vec<u8>, buffer_size: usize) -> Bus<MockPort, Vec<u8>> {
-    Bus::<MockPort, Vec<u8>>::with_buffers(MockPort::new(to_read), vec![0u8; buffer_size], vec![0u8; buffer_size])
-        .unwrap()
+fn open(to_read: Vec<u8>) -> Bus<MockPort> {
+    Bus::new(MockPort::new(to_read)).unwrap()
 }
 
 /// Collect one outcome per motor: `Ok((id, data))` or `Err(rendered error)`.
-fn bulk_read_outcomes(bus: &mut Bus<MockPort, Vec<u8>>, ids: &[u8]) -> Vec<Result<(u8, Vec<u8>), String>> {
+fn bulk_read_outcomes(bus: &mut Bus<MockPort>, ids: &[u8]) -> Vec<Result<(u8, Vec<u8>), String>> {
     let mut got = Vec::new();
     bus.bulk_read(ids, &[StatusRegister::PresentPos], |response| {
         got.push(match response {
@@ -109,7 +107,7 @@ fn a_corrupted_length_does_not_swallow_the_following_reply() {
     wire[3] = 0x0C; // LEN corrupted after the checksum was computed over 0x06.
     wire.extend_from_slice(&status_packet(2, &good));
 
-    let mut bus = open_with(wire, 128);
+    let mut bus = open(wire);
     let got = bulk_read_outcomes(&mut bus, &[1, 2]);
 
     assert_eq!(got.len(), 2);
@@ -138,13 +136,13 @@ fn a_length_too_small_to_frame_is_refused() {
     wire.extend_from_slice(&[0xFF, 0xFF, 0x00, 0x01, 0xFE]);
     wire.extend_from_slice(&status_packet(3, &good));
 
-    let mut bus = open_with(wire, 128);
+    let mut bus = open(wire);
     let got = bulk_read_outcomes(&mut bus, &[1, 2, 3]);
 
     assert_eq!(got.len(), 3);
     for (i, outcome) in got[..2].iter().enumerate() {
         assert!(
-            outcome.as_ref().unwrap_err().contains("InvalidParameterCount"),
+            outcome.as_ref().unwrap_err().contains("InvalidFrameLength"),
             "short frame {i} should be refused, got {outcome:?}"
         );
     }
@@ -155,38 +153,41 @@ fn a_length_too_small_to_frame_is_refused() {
     );
 }
 
-/// A frame too large for the read buffer is dropped, not retried forever.
+/// The largest frame `LEN` can describe is held whole, not refused for its size.
+///
+/// It is still rejected, but on its parameter count rather than its length, and the frame
+/// behind it survives.
 #[test]
-fn an_oversize_reply_does_not_wedge_the_reader() {
+fn the_largest_describable_reply_is_framed() {
     let good = [0xAAu8, 0xAA, 0xAA, 0xAA];
-    // 140 payload bytes is a legal frame, but 146 on the wire does not fit 128.
-    let mut wire = status_packet(1, &[0xAA; 140]);
+    // LEN counts the error byte and the checksum too, so this is the largest reply there is.
+    let payload = [0xAAu8; MAX_PARAMETER_COUNT];
+    let mut wire = status_packet(1, &payload);
+    assert_eq!(wire.len(), MAX_PACKET_SIZE);
     wire.extend_from_slice(&status_packet(2, &good));
 
-    let mut bus = open_with(wire, 128);
+    let mut bus = open(wire);
     let got = bulk_read_outcomes(&mut bus, &[1, 2]);
 
     assert_eq!(got.len(), 2);
     assert!(
-        got[0].as_ref().unwrap_err().contains("BufferFull"),
-        "expected the oversize frame to be refused, got {:?}",
+        got[0].as_ref().unwrap_err().contains("InvalidParameterCount"),
+        "the frame should be held and judged on content, got {:?}",
         got[0]
     );
     assert_eq!(
         got[1],
         Ok((2, good.to_vec())),
-        "the reader wedged on the frame it could not hold"
+        "the largest legal frame was not consumed whole"
     );
 }
 
 /// `LEN` is one byte, so an oversize parameter block cannot be framed at all.
-///
-/// Reachable because `bulk_read_write` does not bound its motor count.
 #[test]
 fn a_parameter_block_too_large_to_describe_is_refused() {
     const WRITE_REGISTERS: [StatusRegister; 15] = [StatusRegister::GoalPos; 15];
 
-    // 5 motors: 2 + 15 + 5 * (1 + 60) = 322 parameter bytes. The buffers hold it.
+    // 5 motors: 2 + 15 + 5 * (1 + 60) = 322 parameter bytes, which LEN cannot describe.
     let devices: Vec<_> = [1u8, 2, 3, 4, 5]
         .into_iter()
         .map(|motor_id| BulkWriteData {
@@ -195,10 +196,10 @@ fn a_parameter_block_too_large_to_describe_is_refused() {
         })
         .collect();
 
-    let mut bus = open_with(Vec::new(), 512);
+    let mut bus = open(Vec::new());
     let result = bus.bulk_read_write(devices, &[], &WRITE_REGISTERS, |_| {});
     assert!(
-        matches!(result, Err(TransferError::WriteError(WriteError::BufferTooSmall(_)))),
+        matches!(result, Err(TransferError::WriteError(WriteError::TooManyParameters(_)))),
         "expected a refusal, got {result:?}"
     );
     assert!(
@@ -231,7 +232,6 @@ fn max_packet_size_covers_every_legal_frame() {
     const { assert!(MAX_PARAMETER_COUNT == 253) };
     const { assert!(MAX_PACKET_SIZE == 259) };
 
-    // The case the old 128 byte default could not serve.
     const { assert!(FULL_CONFIG_REPLY == 130) };
     const { assert!(FULL_CONFIG_REPLY <= MAX_PACKET_SIZE) };
 

@@ -1,5 +1,5 @@
 use clap::Parser;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use ww_bear::asynchronous::Bus;
 use ww_bear::{BulkWriteData, StatusRegister};
 

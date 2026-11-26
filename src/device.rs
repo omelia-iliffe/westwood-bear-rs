@@ -1,17 +1,15 @@
 //! The device half of the bus: acting *as* a BEAR motor rather than driving one.
 //!
-//! [`Bus`] writes instructions and reads replies. [`Device`] does the opposite,
-//! over the same framing code, so a device implementation gets header scanning,
-//! length-driven reassembly and checksum validation for free.
+//! [`Device`] is [`Bus`] in reverse, over the same framing code: header scanning,
+//! length-driven reassembly and checksum validation come for free.
 //!
 //! What a device is responsible for beyond framing:
 //!
 //! - **Answering only what it should.** Serve packets addressed to one of your
 //!   IDs, plus [`Instruction::BulkComm`](crate::Instruction::BulkComm) on
 //!   [`BROADCAST_ID`]; [`Packet::addresses`] is that filter. Check
-//!   [`PacketKind::Status`] before it: the bus is half-duplex, so you also see
-//!   other motors' replies, and those are addressed to nobody but are what
-//!   drives bulk ordering.
+//!   [`PacketKind::Status`] before it: the bus is half-duplex, so you also see other
+//!   motors' replies, addressed to nobody but what drives bulk ordering.
 //!
 //! [`PacketKind::Status`]: crate::PacketKind::Status
 //! [`Packet::addresses`]: crate::Packet::addresses
@@ -24,18 +22,17 @@
 //!
 //! # Replying to what you just read
 //!
-//! [`Self::read`] hands back a [`Packet`] borrowing this device's read buffer,
-//! and [`Self::write_status`] needs the device mutably, so the two cannot
-//! overlap. A handler whose reply depends on the request has to detach it
-//! first with [`Packet::copy_into`]:
+//! [`Self::read`] hands back a [`Packet`] borrowing this device's read buffer, and
+//! [`Self::write_status`] needs the device mutably, so a handler whose reply depends on
+//! the request has to detach it first with [`Packet::copy_into`]:
 //!
 //! ```text
 //! let mut scratch = [0u8; MAX_PARAMETER_COUNT];
 //! loop {
 //!     let packet = device.read(timeout)?.copy_into(&mut scratch)?;
 //!
-//!     // Another motor's reply. `addresses` returns false for these, so the
-//!     // filter below would drop the packets bulk ordering waits on.
+//!     // Another motor's reply: `addresses` is false for these, so the filter below
+//!     // would drop the packets bulk ordering waits on.
 //!     if let PacketKind::Status { .. } = packet.kind {
 //!         if predecessor == Some(packet.id) {
 //!             // Our turn: send the reply prepared when the bulk packet arrived.
@@ -58,13 +55,9 @@
 //! }
 //! ```
 //!
-//! `predecessor` is [`BulkComm::predecessor`] for your position in the last
-//! bulk packet. Size `scratch` for the traffic you serve;
-//! [`MAX_PARAMETER_COUNT`] covers every legal packet.
-//!
-//! A device that only decides whether a packet concerns it never needs the
-//! copy, which is why `read` does not make it for you. `tests/device.rs` has
-//! the same loop as a working test.
+//! `predecessor` is [`BulkComm::predecessor`] for your position in the last bulk packet.
+//! Size `scratch` for the traffic you serve; [`MAX_PARAMETER_COUNT`] covers every legal
+//! packet. `tests/device.rs` has the same loop as a working test.
 //!
 //! [`Packet`]: crate::Packet
 //! [`Packet::copy_into`]: crate::Packet::copy_into
@@ -73,82 +66,47 @@ use crate::ErrorFlags;
 use crate::error::{ReadError, WriteError};
 use crate::protocol::{Packet, REGISTER_BYTES, STATUS_FLAG};
 use core::time::Duration;
-// `super`, not `crate`: `bisync2` compiles this file into both the synchronous and
-// asynchronous trees, and each has its own `Bus` and `SerialPort`. Naming them
-// through `crate` would pin both trees to the synchronous pair.
+// `super`, not `crate`: this file compiles into both bisync2 trees, and naming `Bus`
+// through `crate` would pin both to the synchronous one.
 use super::Bus;
-use super::bus::DefaultBuffer;
 
 #[cfg(doc)]
-use crate::{BulkComm, MAX_PACKET_SIZE, MAX_PARAMETER_COUNT};
+use crate::{BulkComm, MAX_PARAMETER_COUNT};
 
 /// A device on a BEAR bus: something a client sends instructions to.
 ///
-/// Wraps a [`Bus`] purely to reuse its framing loop. The client instruction
-/// methods on that `Bus` are not reachable through this type, because a device
-/// answers the bus rather than driving it.
+/// Wraps a [`Bus`] purely to reuse its framing loop; the client instruction methods on
+/// that `Bus` are not reachable through this type.
 #[derive(Debug)]
-pub struct Device<SerialPort, Buffer = DefaultBuffer>
+pub struct Device<SerialPort>
 where
     SerialPort: super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
-    bus: Bus<SerialPort, Buffer>,
+    bus: Bus<SerialPort>,
 }
 
-#[cfg(feature = "alloc")]
-impl<SerialPort> Device<SerialPort, alloc::vec::Vec<u8>>
+#[super::bisync]
+impl<SerialPort> Device<SerialPort>
 where
     SerialPort: super::SerialPort,
 {
-    /// Create a device using an open serial port, allocating [`MAX_PACKET_SIZE`]
-    /// byte buffers.
+    /// Create a device using an open serial port, reading the baud rate back off it.
     ///
     /// The serial port must already be configured in raw mode with the correct
     /// baud rate, character size (8), parity (disabled) and stop bits (1).
+    ///
+    /// Prefer [`Self::new_with_baud_rate`] when the rate was chosen rather than
+    /// discovered: every message timeout is derived from it.
     pub fn new(serial_port: SerialPort) -> Result<Self, SerialPort::Error> {
         Ok(Self {
             bus: Bus::new(serial_port)?,
         })
     }
-}
 
-#[super::bisync]
-impl<SerialPort, Buffer> Device<SerialPort, Buffer>
-where
-    SerialPort: super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
-{
-    /// Create a device using pre-allocated buffers.
-    ///
-    /// [`MAX_PACKET_SIZE`] is the only size that can carry every legal frame,
-    /// because the one-byte `LEN` field can describe nothing larger. Smaller
-    /// buffers are workable if you know what will be on your bus, but size them
-    /// against the traffic, not against the common case: a reply to a full
-    /// config table read is already `ConfigRegister::COUNT * 4 + 6` = 130 bytes,
-    /// and a client writing that table in one packet sends 161. A frame that
-    /// does not fit is reported as `ReadError::BufferFull` and dropped.
-    ///
-    /// [`ConfigRegister::COUNT`]: crate::ConfigRegister::COUNT
-    pub fn with_buffers(
-        serial_port: SerialPort,
-        read_buffer: Buffer,
-        write_buffer: Buffer,
-    ) -> Result<Self, SerialPort::Error> {
-        Ok(Self {
-            bus: Bus::with_buffers(serial_port, read_buffer, write_buffer)?,
-        })
-    }
-
-    /// Create a device using pre-allocated buffers and a known baud rate.
-    pub fn with_buffers_and_baud_rate(
-        serial_port: SerialPort,
-        read_buffer: Buffer,
-        write_buffer: Buffer,
-        baud_rate: u32,
-    ) -> Self {
+    /// Create a device using an open serial port and a known baud rate.
+    pub fn new_with_baud_rate(serial_port: SerialPort, baud_rate: u32) -> Self {
         Self {
-            bus: Bus::with_buffers_and_baud_rate(serial_port, read_buffer, write_buffer, baud_rate),
+            bus: Bus::new_with_baud_rate(serial_port, baud_rate),
         }
     }
 
@@ -159,15 +117,11 @@ where
 
     /// Change the baud rate.
     ///
-    /// A client changes a motor's baud rate by writing
-    /// [`ConfigRegister::BaudRate`](crate::ConfigRegister::BaudRate). Applying it
-    /// means switching the port under a bus that is still running, so bytes in
-    /// flight are lost either way; the motor firmware accepts that and so should
-    /// a device.
-    ///
-    /// Whatever was already buffered is discarded with the switch. Those bytes
-    /// were sampled at the old rate, and framing them afterwards would deliver a
-    /// packet assembled across two signalling rates as though it were real.
+    /// Applying a write to
+    /// [`ConfigRegister::BaudRate`](crate::ConfigRegister::BaudRate) means switching the
+    /// port under a running bus, so bytes in flight are lost; the motor firmware accepts
+    /// that and so should a device. Whatever was buffered is discarded with the switch,
+    /// having been sampled at the old rate.
     pub fn set_baud_rate(&mut self, baud_rate: u32) -> Result<(), SerialPort::Error> {
         self.bus.set_baud_rate(baud_rate)
     }
@@ -184,10 +138,8 @@ where
 
     /// Read the next packet from the bus, waiting at most `timeout`.
     ///
-    /// Returns everything on the wire, not only packets addressed to this
-    /// device: filtering is the caller's job, because a device holding several
-    /// IDs decides that for itself, and because other motors' replies are what
-    /// drives bulk ordering.
+    /// Returns everything on the wire, not only packets addressed to this device:
+    /// filtering is the caller's job, and other motors' replies drive bulk ordering.
     pub async fn read(&mut self, timeout: Duration) -> Result<Packet<&[u8]>, ReadError<SerialPort::Error>> {
         let deadline = self.bus.serial_port.make_deadline(timeout);
         self.read_deadline(deadline).await
@@ -195,9 +147,8 @@ where
 
     /// Read the next packet from the bus against an existing deadline.
     ///
-    /// Use this rather than [`Self::read`] when waiting for a predecessor's reply
-    /// during a bulk read, so that repeated calls share one budget instead of
-    /// each restarting the clock.
+    /// Use this rather than [`Self::read`] when waiting for a predecessor's reply during a
+    /// bulk read, so repeated calls share one budget instead of each restarting the clock.
     pub async fn read_deadline(
         &mut self,
         deadline: SerialPort::Instant,
@@ -211,10 +162,9 @@ where
     /// `parameter_count` is in bytes and must be a multiple of 4: a reply
     /// carries one 4-byte little-endian word per register read.
     ///
-    /// [`STATUS_FLAG`] is set here rather than trusted to the caller. A status
-    /// packet without it is invisible to every motor sequenced behind this one
-    /// in a bulk read, which then waits out its timeout and drops its own reply
-    /// — a failure that shows up as an unrelated motor going quiet.
+    /// [`STATUS_FLAG`] is set here rather than trusted to the caller: without it the reply
+    /// is invisible to every motor sequenced behind this one in a bulk read, which then
+    /// times out and drops its own reply.
     pub async fn write_status<F>(
         &mut self,
         id: u8,
@@ -230,8 +180,8 @@ where
             0,
             "a status packet carries whole 4-byte registers"
         );
-        // `make_packet` puts this byte where an instruction goes in a request,
-        // which is exactly where the error byte goes in a reply.
+        // `make_packet` puts this byte where a request carries the instruction, which is
+        // where a reply carries the error byte.
         self.bus
             .send_packet(id, error.bits() | STATUS_FLAG, parameter_count, encode_parameters)
             .await
@@ -239,8 +189,8 @@ where
 
     /// Send a status packet whose payload is already encoded.
     ///
-    /// The common case on the reply path: the words were assembled while waiting
-    /// for a turn in a bulk read, and only need framing.
+    /// The common case on the reply path: the words were assembled while waiting for a
+    /// turn in a bulk read, and only need framing.
     pub async fn write_status_bytes(
         &mut self,
         id: u8,

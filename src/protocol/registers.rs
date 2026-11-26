@@ -59,9 +59,8 @@ macro_rules! register {
                 Ok(value)
             }
         }
-        impl<SerialPort, Buffer> crate::asynchronous::Bus<SerialPort, Buffer>
-            where SerialPort: crate::asynchronous::SerialPort,
-                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+        impl<SerialPort> crate::asynchronous::Bus<SerialPort>
+            where SerialPort: crate::asynchronous::SerialPort {
             paste::item!{
                 #[doc = "read the `" $register "` from a specific motor."]
                 pub async fn [<read_ $register:snake>](&mut self, id: u8) -> Result<Response<$inner>, TransferError<SerialPort::Error>> {
@@ -69,9 +68,8 @@ macro_rules! register {
                 }
             }
         }
-        impl<SerialPort, Buffer> crate::Bus<SerialPort, Buffer>
-            where SerialPort: crate::SerialPort,
-                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+        impl<SerialPort> crate::Bus<SerialPort>
+            where SerialPort: crate::SerialPort {
             paste::item!{
                 #[doc = "read the `" $register "` from a specific motor."]
                 pub fn [<read_ $register:snake>](&mut self, id: u8) -> Result<Response<$inner>, TransferError<SerialPort::Error>> {
@@ -99,9 +97,8 @@ macro_rules! register {
                 data.to_le_bytes()
             }
         }
-        impl<SerialPort, Buffer> crate::Bus<SerialPort, Buffer>
-            where SerialPort: crate::SerialPort,
-                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+        impl<SerialPort> crate::Bus<SerialPort>
+            where SerialPort: crate::SerialPort {
             paste::item!{
                 #[doc = "write a `" $inner "` to the `" $register "` of a specific motor."]
                 pub fn [<write_ $register:snake>](&mut self, id: u8, data: $inner) -> Result<(), WriteError<SerialPort::Error>> {
@@ -109,9 +106,8 @@ macro_rules! register {
                 }
             }
         }
-        impl<SerialPort, Buffer> crate::asynchronous::Bus<SerialPort, Buffer>
-            where SerialPort: crate::asynchronous::SerialPort,
-                    Buffer: AsMut<[u8]> + AsRef<[u8]> {
+        impl<SerialPort> crate::asynchronous::Bus<SerialPort>
+            where SerialPort: crate::asynchronous::SerialPort {
             paste::item!{
                 #[doc = "write a `" $inner "` to the `" $register "` of a specific motor."]
                 pub async fn [<write_ $register:snake>](&mut self, id: u8, data: $inner) -> Result<(), WriteError<SerialPort::Error>> {

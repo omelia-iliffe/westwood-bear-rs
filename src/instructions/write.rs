@@ -4,10 +4,9 @@ use crate::registers::WritableRegister;
 use crate::{ConfigAddr, Instruction, StatusAddr};
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     pub(crate) async fn write_raw(
         &mut self,
@@ -20,7 +19,8 @@ where
             buffer[0] = register;
             buffer[1..].copy_from_slice(data);
             Ok(())
-        }).await
+        })
+        .await
     }
     /// Write a config register to a specific motor.
     ///
@@ -36,7 +36,8 @@ where
         register: impl Into<ConfigAddr>,
         data: &[u8],
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, Instruction::WriteCfg as u8, register.into().0, data).await
+        self.write_raw(motor_id, Instruction::WriteCfg as u8, register.into().0, data)
+            .await
     }
 
     /// Write a status register to a specific motor.
@@ -51,7 +52,8 @@ where
         register: impl Into<StatusAddr>,
         data: &[u8],
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, Instruction::WriteStat as u8, register.into().0, data).await
+        self.write_raw(motor_id, Instruction::WriteStat as u8, register.into().0, data)
+            .await
     }
 
     /// Write a register to a specific motor.
@@ -63,6 +65,7 @@ where
         motor_id: u8,
         data: R::Inner,
     ) -> Result<(), WriteError<SerialPort::Error>> {
-        self.write_raw(motor_id, R::WRITE_INST, R::ADDRESS, &R::encode_bytes(data)).await
+        self.write_raw(motor_id, R::WRITE_INST, R::ADDRESS, &R::encode_bytes(data))
+            .await
     }
 }

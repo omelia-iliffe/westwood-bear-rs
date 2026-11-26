@@ -25,9 +25,9 @@
 //! needs that same device mutably, so a reply whose contents depend on the
 //! request has to detach the request first: see [`Packet::copy_into`].
 
+use crate::Instruction;
 use crate::error::{BufferTooSmallError, ExpectedCount, InvalidMessage, InvalidParameterCount};
 use crate::protocol::{MAX_PARAMETER_COUNT, PACKET_ERROR, PACKET_ID, REGISTER_BYTES};
-use crate::Instruction;
 
 /// Bit 7 of the error byte, set on every status packet a motor sends.
 ///

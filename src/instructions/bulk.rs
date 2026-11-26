@@ -30,10 +30,9 @@ const MAX_BULK_REGISTERS: usize = 0x0F;
 const REPLY_FRAMING_BYTES: usize = 3;
 
 #[super::super::bisync]
-impl<SerialPort, Buffer> Bus<SerialPort, Buffer>
+impl<SerialPort> Bus<SerialPort>
 where
     SerialPort: super::super::SerialPort,
-    Buffer: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Bulk read and/or write status registers across multiple motors in a single packet.
     ///
